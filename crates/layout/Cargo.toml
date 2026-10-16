@@ -1,0 +1,16 @@
+[package]
+name = "layout"
+description = "Physical keyboard layouts: KLE import and the app's own layout format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kle-serial.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

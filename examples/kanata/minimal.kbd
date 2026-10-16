@@ -1,0 +1,35 @@
+;; Minimal config for developing the overlay.
+;; Caps Lock: tap for Esc, hold for the `nav` layer (hjkl arrows),
+;; so you can watch LayerChange events arrive.
+;;
+;;   just kanata      # starts this with the TCP server on 127.0.0.1:7070
+;;   just run         # in another terminal
+
+(defcfg
+  process-unmapped-keys yes
+)
+
+(defsrc
+  esc  q    w    e    r    t    y    u    i    o    p    bspc
+  caps a    s    d    f    g    h    j    k    l    ;    ret
+  lsft z    x    c    v    b    n    m    ,    .    /
+  tab  spc  del
+)
+
+(defalias
+  cap (tap-hold 200 200 esc (layer-while-held nav))
+)
+
+(deflayer base
+  esc  q    w    e    r    t    y    u    i    o    p    bspc
+  @cap a    s    d    f    g    h    j    k    l    ;    ret
+  lsft z    x    c    v    b    n    m    ,    .    /
+  tab  spc  del
+)
+
+(deflayer nav
+  _    _    _    _    _    _    _    _    _    _    _    _
+  _    _    _    _    _    _    left down up   rght _    _
+  _    _    _    _    _    _    _    _    _    _    _
+  _    _    _
+)

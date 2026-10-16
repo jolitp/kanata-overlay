@@ -1,0 +1,8 @@
+[
+  {"name": "sample 3-row board with a rotated thumb cluster"},
+  ["Esc", "Q", "W", "E", "R", "T", {"x": 1}, "Y", "U", "I", "O", "P", "Backspace"],
+  [{"w": 1.25}, "Caps Lock", "A", "S", "D", "F", "G", {"x": 0.75}, "H", "J", "K", "L", ";", {"w": 1.25}, "Enter"],
+  [{"w": 1.5}, "LShift", "Z", "X", "C", "V", "B", {"x": 0.5}, "N", "M", ",", ".", {"w": 1.5}, "/"],
+  [{"r": 15, "rx": 4.5, "ry": 3.25, "y": 0.1, "x": -0.5}, "Tab", {"w": 1.5}, "Space"],
+  [{"r": -15, "rx": 8.5, "ry": 3.25, "y": 0.1, "x": -1}, {"w": 1.5}, "Space", "Del"]
+]

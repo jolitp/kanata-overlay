@@ -1,0 +1,23 @@
+[package]
+name = "kanata-overlay"
+description = "On-screen keyboard overlay for Kanata (Qt 6 / QML front end)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kanata-client.workspace = true
+layout.workspace = true
+cxx.workspace = true
+cxx-qt.workspace = true
+cxx-qt-lib.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[build-dependencies]
+cxx-qt-build.workspace = true
+
+[lints]
+workspace = true
