@@ -56,6 +56,10 @@
                 evtest
               ]);
 
+            # Qt Gui links against libglvnd's -lGLX / -lOpenGL; as a build input
+            # the cc wrapper puts its lib dir on the linker search path.
+            buildInputs = [ pkgs.libGL ];
+
             # cxx-qt-build finds Qt through this qmake.
             QMAKE = "${qtEnv}/bin/qmake";
 
