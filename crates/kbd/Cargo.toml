@@ -1,0 +1,12 @@
+[package]
+name = "kbd"
+description = "Kanata .kbd subset parser and key labels (no Qt)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

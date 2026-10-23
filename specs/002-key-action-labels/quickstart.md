@@ -68,3 +68,36 @@ just run                   # terminal 2
 
 Run `RUST_LOG=debug QT_FORCE_STDERR_LOGGING=1 just run 2>&1 | grep -i defalias`.
 Expected: no output; config text is never logged.
+
+## Validation log
+
+### 2026-10-23: automated checks and agent smoke test (Plasma 6 Wayland)
+
+| Check | Result |
+|-------|--------|
+| `just check` (66 tests, 35 in `kbd`) and clippy `-D warnings` | ✅ |
+| `just kanata-check examples/kanata/all-actions.kbd` → "config file is valid" | ✅ |
+| §2 base layer, `minimal.kbd` (screenshot): `Esc Q W … P`, `;`, Caps = `Esc` + blue hold dot + `@cap`, LShift unbound (orange; the sample layout's legend is a bare "Shift") | ✅ SC-001 |
+| §2 `nav` layer (screenshot): `H J K L` = `← ↓ ↑ →`, every other key grey (inherited), Caps inherits `Esc @cap` | ✅ |
+| SC-002: debug log "labels updated 21.9 ms / 23.3 ms after the layer change arrived" | ✅ < 100 ms |
+| §2 `--config /nope.kbd` → notice "config: cannot read /nope.kbd: No such file or directory" | ✅ |
+| §3 `all-actions.kbd` (screenshot): `⌃C ↥nav ⇒game Esc(dot, @th) ⌃V(@cp) ¹⇧ λ ⇪W (macro h…` and a blank, dimmed `XX` | ✅ SC-004 |
+| §5 privacy: no config text in the debug logs; `minimal.kbd` sha256 unchanged after runs (FR-004, FR-013) | ✅ (without a reload; see below) |
+
+**Found and fixed along the way**: the connection thread logged every unhandled Kanata message with `{:?}`. That included `HoldActivated { key }` and `TapActivated { key }`, which carry pressed-key names, against constitution VI. It now logs only the message kind.
+
+**Still to do by hand**: §4 reload with real Kanata (T029). The agent didn't run real Kanata, because it grabs the keyboard (constitution III).
+
+**Requirement review (T034)**: FR-001 – FR-013 are all implemented. FR-011 and FR-012 (reload, keep the old labels on failure) and US3 scenario 3 are implemented but unverified until T029.
+
+### 2026-10-23: reload with real Kanata (§4, T029), checked by the user
+
+| Check | Result |
+|-------|--------|
+| Real Kanata: holding Caps switches the overlay to `nav` | ✅ |
+| Edited `nav` (`left` → `home`): the label changed | ✅ (see the note below) |
+| Unbalanced `(`: the notice with line and column is shown, and the old labels stay | ✅ FR-012 |
+
+- **Gap found**: Kanata 1.12 has no file watching. It sends `ConfigFileReload` only after a live reload (`lrld`); restarting Kanata is just a new connection. The overlay used to re-read the config only on `ConfigFileReload`, so edit-and-restart could leave stale labels.
+- **Fix**: the overlay also re-reads the config each time it (re)connects to Kanata. Verified with the fake server on a copy of the config: after the edit and a server restart, `H` showed `⇱` on `nav`, and the log showed two reads. `just check` passes.
+- The keyboard itself only changes after Kanata reloads or restarts. That's Kanata's behaviour, not the overlay's.

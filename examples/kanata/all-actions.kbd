@@ -1,0 +1,47 @@
+;; One key per action kind the overlay labels (specs/002-key-action-labels, SC-004).
+;; The top row of the base layer, left to right:
+;;
+;;   esc  Ctrl+C             → ⌃C
+;;   q    hold the nav layer → ↥nav
+;;   w    switch to game     → ⇒game      (Esc on game switches back)
+;;   e    tap-hold alias     → Esc + hold dot
+;;   r    alias for Ctrl+V   → ⌃V with "@cp"
+;;   t    one-shot Shift     → ¹⇧
+;;   y    unicode            → λ
+;;   u    caps-word          → ⇪W
+;;   i    macro              → (macro h…
+;;   o    does nothing       → blank, dimmed
+;;
+;;   just run --config examples/kanata/all-actions.kbd
+;;   just kanata-check examples/kanata/all-actions.kbd
+
+(defcfg
+  process-unmapped-keys yes
+)
+
+(defsrc
+  esc  q    w    e    r    t    y    u    i    o    p    bspc
+  caps a    s    d    f    g    h    j    k    l    ;    ret
+  lsft z    x    c    v    b    n    m    ,    .    /
+  tab  spc  del
+)
+
+(defalias
+  th (tap-hold 200 200 esc lctl)
+  cp C-v
+)
+
+(deflayer base
+  C-c  (layer-while-held nav) (layer-switch game) @th @cp (one-shot 500 lsft) (unicode λ) (caps-word 2000) (macro h e l l o) XX p bspc
+  caps a    s    d    f    g    h    j    k    l    ;    ret
+  lsft z    x    c    v    b    n    m    ,    .    /
+  tab  spc  del
+)
+
+(deflayermap (nav)
+  h left  j down  k up  l rght
+)
+
+(deflayermap (game)
+  esc (layer-switch base)
+)

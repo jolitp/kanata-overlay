@@ -105,6 +105,7 @@ Kanata 1.12's action names (`list_actions.rs`) are grouped like this:
   - The file is read at start-up on a background thread. The parsed config is pushed to the QObject with `qt_thread().queue(...)`.
   - The connection thread already receives `ServerMessage::ConfigFileReload { new }`. It re-reads the given path and, if `new` differs from it (compared as canonical paths), adds the notice "Kanata switched to <new>; the overlay still reads <path>".
   - A failed re-read keeps the old config (FR-012).
+  - **Added 2026-10-23 (T029):** the config is also re-read on every (re)connection. Kanata 1.12 doesn't watch its file and sends `ConfigFileReload` only after a live reload (`lrld` actions; `src/kanata/mod.rs`). The usual workflow, editing the file and restarting Kanata, would otherwise leave stale labels.
   - `just run` passes `--config {{kanata_cfg}}`, so the example layout and the example config go together.
 - **Rationale**: This reuses the existing connection thread and the Qt-thread rule (constitution I) and adds no new thread type.
 

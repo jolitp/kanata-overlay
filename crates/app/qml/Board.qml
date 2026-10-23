@@ -10,6 +10,9 @@ Item {
     readonly property real pad: 16
 
     readonly property var layout: overlay.layoutJson.length > 0 ? JSON.parse(overlay.layoutJson) : ({ name: "", keys: [] })
+    // Labels for the active layer, keyed by canonical Kanata key name; {} without a config.
+    readonly property var labels: JSON.parse(overlay.labelsJson)
+    readonly property bool hasConfig: Object.keys(labels).length > 0
     readonly property var bounds: {
         // Bounding box of all key corners, after KLE rotation around (rx, ry).
         let w = 0, h = 0
@@ -80,6 +83,8 @@ Item {
                 required property var modelData
                 key: modelData
                 unit: board.unit
+                label: modelData.kanataCanonical ? board.labels[modelData.kanataCanonical] : undefined
+                hasConfig: board.hasConfig
             }
         }
     }

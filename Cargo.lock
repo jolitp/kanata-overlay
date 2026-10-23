@@ -389,6 +389,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "kanata-client",
+ "kbd",
  "layout",
  "serde_json",
  "settings",
@@ -407,6 +408,10 @@ dependencies = [
  "serde_derive",
  "serde_json",
 ]
+
+[[package]]
+name = "kbd"
+version = "0.1.0"
 
 [[package]]
 name = "kle-serial"

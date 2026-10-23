@@ -8,7 +8,7 @@ Rust + Qt 6/QML (via [cxx-qt](https://github.com/KDAB/cxx-qt)), built for KDE Pl
 
 *Current state: an always-on-top, click-through overlay (KDE Plasma Wayland; best
 effort on X11). It imports a KLE layout, connects to Kanata's TCP server and shows the
-active layer. Key labels from your `.kbd` come next (see Roadmap).*
+active layer, and labels each key with its action from your `.kbd` config.*
 
 ## Why a layout designer?
 
@@ -66,6 +66,26 @@ just run --edge bottom-right --margin 24 --opacity 60 --scale 120 --screen DP-1
 just run --settings /tmp/test-settings.json   # use another settings file
 ```
 
+### Key labels
+
+Pass your Kanata config with `--config` (`just run` passes `$KANATA_CFG`, by default
+`examples/kanata/minimal.kbd`) and each key shows what it does on the active layer:
+
+| On a key | Meaning |
+| --- | --- |
+| `A`, `⏎`, `⌫`, `←` … | the key it sends |
+| `⌃C`, `⌃⇧T`, `⌥›E` | a shortcut (`›` = right-hand modifier) |
+| `↥nav` / `⇒game` | hold a layer / switch to it |
+| blue dot | tap-hold: the label is the tap, holding does something else |
+| `@name` underneath | the action comes from an alias |
+| grey | transparent: inherited from the base layer |
+| dimmed blank | does nothing on this layer |
+
+The overlay reads `defsrc`, `deflayer`, `deflayermap` and `defalias`. `include`,
+`deftemplate` and per-platform sections are skipped and listed in the header. When
+Kanata reloads its config, the labels follow. `examples/kanata/all-actions.kbd` has
+one key of each kind.
+
 Problems (missing layer-shell, a shortcut that could not be registered, a bad
 settings value) are shown in the overlay's header. Qt logs go to the journal unless
 you set `QT_FORCE_STDERR_LOGGING=1`.
@@ -85,6 +105,19 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 # then log out and back in
 ```
 
+**On NixOS** those commands don't stick. `nixos-rebuild` regenerates `/etc/group`, and udev
+ignores `/etc/udev/rules.d`. Declare the same in `configuration.nix` instead:
+
+```nix
+# Kanata without root: the uinput module, a `uinput` group and its udev rule
+hardware.uinput.enable = true;
+users.users.<you>.extraGroups = [ "input" "uinput" ];   # keep your existing groups
+```
+
+Then run `sudo nixos-rebuild switch`, log out and back in, and run `just check-perms`.
+New groups only apply to a new login session. Until then `id -nG` (your session) shows
+the old groups, while `id -nG "$USER"` (the user database) already shows the new ones.
+
 The app is designed never to need root at runtime (constitution, principle III).
 
 ## Repository layout
@@ -94,6 +127,7 @@ The app is designed never to need root at runtime (constitution, principle III).
 | `crates/kanata-client` | Kanata TCP client and process launcher (no Qt) |
 | `crates/layout` | KLE import and the app's layout format (no Qt) |
 | `crates/settings` | Overlay settings file, CLI overrides, placement maths (no Qt) |
+| `crates/kbd` | Kanata `.kbd` subset parser and key labels (no Qt) |
 | `crates/app` | `kanata-overlay` binary: cxx-qt bridge + QML; `cpp/` holds thin C++ shims (KGlobalAccel) |
 | `examples/` | Sample KLE layout and Kanata config |
 | `.specify/` | Spec Kit templates, scripts and the [constitution](.specify/memory/constitution.md) |
@@ -119,7 +153,7 @@ Suggested order for the first Spec Kit features:
    always-on-top, click-through layer-shell surface on Plasma Wayland (LayerShellQt's QML
    module), edge / margin / opacity / scale / monitor settings, global shortcuts
    (KGlobalAccel); X11 fallback via window hints.
-2. **Layer actions on keys**: parse `defsrc` / `deflayer` / `defalias` from the
+2. ~~**Layer actions on keys**~~ ✅ done in [`specs/002-key-action-labels`](specs/002-key-action-labels/spec.md): parse `defsrc` / `deflayer` / `defalias` from the
    `.kbd` file (re-parse on `ConfigFileReload`) and label each key with its action.
 3. **Managed Kanata**: launch Kanata with a localhost TCP port, readiness probing,
    log panel, restart with backoff, `PR_SET_PDEATHSIG`; attach mode when Kanata is

@@ -5,9 +5,10 @@
 //! `qt_thread().queue(...)`, the only safe way to touch a QObject from another
 //! thread.
 
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
@@ -37,6 +38,9 @@ pub mod qobject {
         #[qproperty(bool, use_layer_shell)]
         /// Things the user should know, joined with " · " (FR-013, FR-017, …).
         #[qproperty(QString, notices)]
+        /// Per-key labels for the active layer as JSON: canonical key name →
+        /// `{text, style, hold, alias}` (contracts/labels.md); `{}` without a config.
+        #[qproperty(QString, labels_json)]
         /// Toggled by the show/hide shortcut.
         #[qproperty(bool, overlay_shown)]
         /// `overlay_shown`, or the settings window is open (live preview).
@@ -78,6 +82,8 @@ pub struct OverlayStateRust {
     overlay_visible: bool,
     previewing: bool,
     notice_list: Vec<String>,
+    labels_json: QString,
+    config: Option<kbd::Config>,
     started: bool,
     args: Args,
 }
@@ -96,6 +102,8 @@ impl Default for OverlayStateRust {
             overlay_visible: true,
             previewing: false,
             notice_list: Vec::new(),
+            labels_json: QString::from("{}"),
+            config: None,
             started: false,
             args: Args::default(),
         }
@@ -121,7 +129,7 @@ impl qobject::OverlayState {
         match layout {
             Ok(layout) => self
                 .as_mut()
-                .set_layout_json(QString::from(&layout.to_json())),
+                .set_layout_json(QString::from(&with_canonical_names(&layout.to_json()))),
             Err(e) => self
                 .as_mut()
                 .set_status(QString::from(&format!("layout error: {e:#}"))),
@@ -134,7 +142,57 @@ impl qobject::OverlayState {
             self.as_mut().add_notice(&QString::from(missing));
         }
 
-        spawn_connection(self.qt_thread(), args.address);
+        if let Some(path) = &args.config {
+            match kbd::read(path) {
+                Ok(config) => self.as_mut().use_config(config),
+                Err(e) => self.as_mut().add_notice(&QString::from(&format!(
+                    "config: cannot read {}: {e}",
+                    path.display()
+                ))),
+            }
+        }
+
+        spawn_connection(self.qt_thread(), args.address, args.config.clone());
+    }
+
+    /// Take a freshly read config and relabel the board.
+    fn use_config(mut self: Pin<&mut Self>, config: kbd::Config) {
+        for w in &config.warnings {
+            self.as_mut().add_notice(&QString::from(&w.to_string()));
+        }
+        self.as_mut().rust_mut().config = Some(config);
+        self.relabel();
+    }
+
+    /// Recompute the labels: the current layer while connected, else the
+    /// config's first layer (FR-010).
+    fn relabel(mut self: Pin<&mut Self>) {
+        let Some(config) = &self.rust().config else {
+            return;
+        };
+        let layer = if *self.connected() {
+            self.current_layer().to_string()
+        } else {
+            String::new()
+        };
+        let (labels, warnings) = kbd::labels(config, &layer);
+        let json: serde_json::Map<String, serde_json::Value> = labels
+            .into_iter()
+            .map(|(key, l)| {
+                let value = serde_json::json!({
+                    "text": l.text,
+                    "style": l.style.as_str(),
+                    "hold": l.hold,
+                    "alias": l.alias.unwrap_or_default(),
+                });
+                (key, value)
+            })
+            .collect();
+        self.as_mut()
+            .set_labels_json(QString::from(&serde_json::Value::Object(json).to_string()));
+        for w in warnings {
+            self.as_mut().add_notice(&QString::from(&w.to_string()));
+        }
     }
 
     fn toggle_overlay(mut self: Pin<&mut Self>) {
@@ -184,6 +242,23 @@ impl qobject::OverlayState {
     }
 }
 
+/// Add each key's canonical Kanata name (`kanataCanonical`), so QML can look
+/// up its label without knowing Kanata's key spellings.
+fn with_canonical_names(layout_json: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(layout_json) else {
+        return layout_json.to_owned();
+    };
+    if let Some(keys) = value.get_mut("keys").and_then(|k| k.as_array_mut()) {
+        for key in keys {
+            if let Some(name) = key.get("kanata").and_then(|k| k.as_str()) {
+                let canonical = kbd::canonical(name);
+                key["kanataCanonical"] = serde_json::Value::String(canonical);
+            }
+        }
+    }
+    value.to_string()
+}
+
 /// Accept either our own layout format or raw KLE JSON.
 fn load_layout(text: &str) -> layout::Result<Layout> {
     Layout::from_json(text).or_else(|_| Layout::from_kle_json(text))
@@ -193,7 +268,11 @@ fn load_layout(text: &str) -> layout::Result<Layout> {
 type Update = Box<dyn FnOnce(Pin<&mut qobject::OverlayState>) + Send>;
 
 /// Keep a connection to Kanata alive, reconnecting forever.
-fn spawn_connection(qt: cxx_qt::CxxQtThread<qobject::OverlayState>, address: String) {
+fn spawn_connection(
+    qt: cxx_qt::CxxQtThread<qobject::OverlayState>,
+    address: String,
+    config_path: Option<PathBuf>,
+) {
     thread::spawn(move || {
         let push = |f: Update| {
             // Err means the QObject is gone (app quitting): nothing to do.
@@ -213,14 +292,38 @@ fn spawn_connection(qt: cxx_qt::CxxQtThread<qobject::OverlayState>, address: Str
                     push(Box::new(|mut o| {
                         o.as_mut().set_connected(true);
                         o.as_mut().set_status(QString::from("connected"));
+                        o.relabel();
                     }));
+                    // A (re)started Kanata may have loaded an edited config, and it
+                    // only sends ConfigFileReload for live reloads: re-read it here too.
+                    if let Some(path) = &config_path {
+                        push(reload_config(path, &path.to_string_lossy()));
+                    }
                     for line in client.incoming() {
                         match line {
                             Ok(Incoming::Message(ServerMessage::LayerChange { new }))
                             | Ok(Incoming::Message(ServerMessage::CurrentLayerName {
                                 name: new,
                             })) => {
-                                push(Box::new(move |o| o.set_current_layer(QString::from(&new))));
+                                let received = Instant::now();
+                                push(Box::new(move |mut o| {
+                                    o.as_mut().set_current_layer(QString::from(&new));
+                                    o.as_mut().relabel();
+                                    tracing::debug!(
+                                        "labels updated {:?} after the layer change arrived",
+                                        received.elapsed()
+                                    );
+                                }));
+                            }
+                            Ok(Incoming::Message(ServerMessage::ConfigFileReload { new })) => {
+                                if let Some(path) = &config_path {
+                                    push(reload_config(path, &new));
+                                }
+                            }
+                            // Only the kind: some messages (HoldActivated, TapActivated)
+                            // carry pressed-key names, which must not be logged (VI).
+                            Ok(Incoming::Message(other)) => {
+                                tracing::debug!("kanata: {} message", message_kind(&other));
                             }
                             Ok(other) => tracing::debug!("kanata: {other:?}"),
                             Err(e) => {
@@ -232,6 +335,7 @@ fn spawn_connection(qt: cxx_qt::CxxQtThread<qobject::OverlayState>, address: Str
                     push(Box::new(|mut o| {
                         o.as_mut().set_connected(false);
                         o.as_mut().set_status(QString::from("disconnected"));
+                        o.relabel();
                     }));
                 }
                 Err(e) => tracing::debug!("connect to {address} failed: {e}"),
@@ -239,4 +343,46 @@ fn spawn_connection(qt: cxx_qt::CxxQtThread<qobject::OverlayState>, address: Str
             thread::sleep(Duration::from_secs(1));
         }
     });
+}
+
+/// Re-read the config after Kanata (re)connected or reloaded (FR-011, FR-012).
+/// Runs on the connection thread; the result is applied on the Qt thread.
+fn reload_config(path: &Path, kanata_now_reads: &str) -> Update {
+    let result = kbd::read(path);
+    let switched = std::fs::canonicalize(kanata_now_reads).ok() != std::fs::canonicalize(path).ok();
+    let path = path.display().to_string();
+    let kanata_now_reads = kanata_now_reads.to_owned();
+    tracing::debug!("config reloaded");
+    Box::new(move |mut o| {
+        match result {
+            Ok(config) => o.as_mut().use_config(config),
+            // Keep the previous labels.
+            Err(e) => o
+                .as_mut()
+                .add_notice(&QString::from(&format!("config: cannot read {path}: {e}"))),
+        }
+        if switched {
+            o.as_mut().add_notice(&QString::from(&format!(
+                "Kanata switched to {kanata_now_reads}; the overlay still reads {path}"
+            )));
+        }
+    })
+}
+
+/// A Kanata message's name without its contents.
+fn message_kind(m: &ServerMessage) -> &'static str {
+    match m {
+        ServerMessage::LayerChange { .. } => "LayerChange",
+        ServerMessage::LayerNames { .. } => "LayerNames",
+        ServerMessage::FakeKeyNames { .. } => "FakeKeyNames",
+        ServerMessage::CurrentLayerInfo { .. } => "CurrentLayerInfo",
+        ServerMessage::ConfigFileReload { .. } => "ConfigFileReload",
+        ServerMessage::CurrentLayerName { .. } => "CurrentLayerName",
+        ServerMessage::MessagePush { .. } => "MessagePush",
+        ServerMessage::Error { .. } => "Error",
+        ServerMessage::HelloOk { .. } => "HelloOk",
+        ServerMessage::ReloadResult { .. } => "ReloadResult",
+        ServerMessage::HoldActivated { .. } => "HoldActivated",
+        ServerMessage::TapActivated { .. } => "TapActivated",
+    }
 }
