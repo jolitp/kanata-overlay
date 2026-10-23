@@ -34,27 +34,39 @@
               qtEnv
             ]
             ++ (with pkgs; [
-                # Rust toolchain
-                rustc
-                cargo
-                clippy
-                rustfmt
-                rust-analyzer
+              # Rust toolchain
+              rustc
+              cargo
+              clippy
+              rustfmt
+              rust-analyzer
 
-                # C++ side of cxx-qt
-                pkg-config
-                cmake
-                clang-tools # clangd for the small C++ shims
+              # C++ side of cxx-qt
+              pkg-config
+              cmake
+              clang-tools # clangd for the small C++ shims
 
-                # Project tooling
-                just
-                uv # runs the Spec Kit CLI (`just speckit ...`)
-                git
+              # Project tooling
+              just
+              uv # runs the Spec Kit CLI (`just speckit ...`)
+              git
 
-                # Kanata itself and input debugging
-                kanata
-                evtest
-              ]);
+              # Kanata itself and input debugging
+              kanata
+              evtest
+            ]);
+
+            # Qt Gui links against libglvnd's -lGLX / -lOpenGL; as a build input
+            # the cc wrapper puts its lib dir on the linker search path.
+            # KGlobalAccel: global shortcuts (research R5); as a build input its
+            # headers/lib land on the cc-wrapper paths too.
+            buildInputs = [
+              pkgs.libGL
+              pkgs.kdePackages.kglobalaccel
+            ];
+
+            # KGlobalAccel's headers include each other without the KF6/ prefix.
+            KF6_GLOBALACCEL_INCLUDE_DIR = "${pkgs.kdePackages.kglobalaccel.dev}/include/KF6/KGlobalAccel";
 
             # cxx-qt-build finds Qt through this qmake.
             QMAKE = "${qtEnv}/bin/qmake";

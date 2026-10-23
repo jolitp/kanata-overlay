@@ -1,13 +1,19 @@
 //! kanata-overlay: shows the active Kanata layer on a picture of your keyboard.
 //!
 //!     kanata-overlay [--connect 127.0.0.1:7070] [--layout my-board.json]
+//!                    [--settings FILE] [--edge top|bottom|left|right] [--margin PX]
+//!                    [--opacity PERCENT] [--scale PERCENT] [--screen NAME]
 //!
 //! `--layout` accepts KLE JSON (keyboard-layout-editor.com) or the app's own
-//! layout format. Without it, a small sample board is shown.
+//! layout format. Without it, a small sample board is shown. The placement
+//! options override the settings file for this run only.
 
+mod global_shortcut;
 mod overlay_state;
+mod platform;
+mod settings_state;
 
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 
 /// Command-line options (hand-parsed for now; swap for `clap` when they grow).
 #[derive(Debug, Clone)]
@@ -46,7 +52,23 @@ fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    // Bad placement options stop us before any window opens (contracts/cli.md).
+    match settings::Overrides::parse(std::env::args().skip(1)) {
+        Ok(overrides) => {
+            let _ = settings_state::OVERRIDES.set(overrides);
+        }
+        Err(e) => {
+            eprintln!("kanata-overlay: {e}");
+            std::process::exit(2);
+        }
+    }
+
+    // Wayland app id of our windows, and KGlobalAccel's view of who we are.
+    platform::set_desktop_file_name("io.github.jolitp.kanataoverlay");
     let mut app = QGuiApplication::new();
+    if let Some(app) = app.as_mut() {
+        app.set_application_name(&QString::from("kanata-overlay"));
+    }
     let mut engine = QQmlApplicationEngine::new();
 
     if let Some(engine) = engine.as_mut() {

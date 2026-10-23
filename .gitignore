@@ -3,3 +3,7 @@
 .direnv/
 *.swp
 .DS_Store
+*.rs.bk
+*.log
+.idea/
+.vscode/
