@@ -9,6 +9,7 @@ Window {
     id: win
     required property var overlay
     required property var settings
+    required property var kanata
 
     // The configured monitor, or the primary one (research R8).
     readonly property var targetScreen: {
@@ -54,6 +55,7 @@ Window {
     Board {
         id: board
         overlay: win.overlay
+        kanata: win.kanata
         x: win.atLeft ? win.settings.margin : 0
         y: win.atTop ? win.settings.margin : 0
         opacity: win.settings.opacity

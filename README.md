@@ -38,8 +38,9 @@ With real Kanata:
 
 ```sh
 just check-perms       # can Kanata run without root? (see below)
-just kanata            # Kanata with examples/kanata/minimal.kbd and TCP on 127.0.0.1:7070
+just run               # no Kanata running? the overlay starts and supervises one itself
 LAYOUT=path/to/your-kle.json just run   # your own board
+just kanata            # or run Kanata yourself (terminal 1); `just run` then attaches
 just watch             # print raw TCP events
 ```
 
@@ -89,6 +90,24 @@ one key of each kind.
 Problems (missing layer-shell, a shortcut that could not be registered, a bad
 settings value) are shown in the overlay's header. Qt logs go to the journal unless
 you set `QT_FORCE_STDERR_LOGGING=1`.
+
+### Managed or attached
+
+With `--config` (which `just run` passes), the overlay checks whether a Kanata already
+answers on `--connect` (default `127.0.0.1:7070`):
+
+- **attached**: one does, and the overlay uses it and never stops it. If it goes away,
+  the settings window offers **Start Kanata**. The overlay never takes over by itself.
+- **managed**: none does, so the overlay starts Kanata itself (`--kanata PROGRAM`
+  picks the program; the default is `kanata` on `PATH`). It checks the config first
+  (`kanata --check`), restarts Kanata with a growing delay if it stops, and gives up
+  after 5 failures in 2 minutes. The settings window has **Restart** and **Show log**
+  (the recent output is kept in memory only and never saved).
+
+A managed Kanata always stops with the overlay, also if the overlay crashes or is
+killed, so the keyboard is never left grabbed. If anything ever looks wrong, the
+keyboard still works through Kanata, and `pkill -x kanata` from a terminal releases it (`-x` matches the exact name; plain
+`pkill kanata` would also kill `kanata-overlay`).
 
 ## Running Kanata without root
 
@@ -155,7 +174,7 @@ Suggested order for the first Spec Kit features:
    (KGlobalAccel); X11 fallback via window hints.
 2. ~~**Layer actions on keys**~~ ✅ done in [`specs/002-key-action-labels`](specs/002-key-action-labels/spec.md): parse `defsrc` / `deflayer` / `defalias` from the
    `.kbd` file (re-parse on `ConfigFileReload`) and label each key with its action.
-3. **Managed Kanata**: launch Kanata with a localhost TCP port, readiness probing,
+3. ~~**Managed Kanata**~~ ✅ done in [`specs/003-managed-kanata`](specs/003-managed-kanata/spec.md) (the `systemd --user` mode is deferred): launch Kanata with a localhost TCP port, readiness probing,
    log panel, restart with backoff, `PR_SET_PDEATHSIG`; attach mode when Kanata is
    already running; optional `systemd --user` mode.
 4. **Layout editor**: bind unbound keys, move/resize/rotate keys, save layouts.

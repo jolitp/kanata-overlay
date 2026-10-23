@@ -17,10 +17,24 @@ QtObject {
             id: settingsState
             onWarning: text => overlayState.addNotice(text)
         },
+        KanataState {
+            id: kanataState
+        },
+        Connections {
+            target: overlayState
+            function onConnectedChanged() { kanataState.setConnectedState(overlayState.connected) }
+        },
+        // A managed Kanata stops with the overlay (constitution III); crashes and
+        // signals are covered by the parent-death signal.
+        Connections {
+            target: Qt.application
+            function onAboutToQuit() { kanataState.shutdown() }
+        },
         SettingsWindow {
             id: settingsWindow
             settings: settingsState
             overlay: overlayState
+            kanata: kanataState
         },
         GlobalShortcut {
             id: toggleShortcut
@@ -40,11 +54,12 @@ QtObject {
 
     Component.onCompleted: {
         overlayState.start()
+        kanataState.start()
         settingsState.load()
 
         // Created imperatively so its required properties are set at creation.
         const variant = Qt.createComponent(overlayState.useLayerShell ? "LayerShellOverlay.qml" : "FallbackOverlay.qml")
-        overlayWindow = variant.createObject(root, { overlay: overlayState, settings: settingsState })
+        overlayWindow = variant.createObject(root, { overlay: overlayState, settings: settingsState, kanata: kanataState })
         if (!overlayWindow)
             console.error(variant.errorString())
 

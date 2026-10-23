@@ -8,6 +8,7 @@ Window {
     id: win
     required property var overlay
     required property var settings
+    required property var kanata
 
     readonly property var targetScreen: {
         for (const s of Qt.application.screens)
@@ -38,6 +39,7 @@ Window {
     Board {
         id: board
         overlay: win.overlay
+        kanata: win.kanata
         opacity: win.settings.opacity
         scale: win.place.scale
         transformOrigin: Item.TopLeft
