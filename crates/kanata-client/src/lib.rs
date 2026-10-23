@@ -2,16 +2,25 @@
 //!
 //! - [`client`]: a blocking client for Kanata's TCP server (newline-delimited JSON).
 //! - [`launcher`]: builds and spawns a managed `kanata` child process.
+//! - [`supervisor`]: keeps a managed Kanata running (check, start, restart, stop).
+//! - [`probe`]: is a Kanata answering at an address?
 //!
 //! The wire types come from the upstream `kanata-tcp-protocol` crate and are
 //! re-exported as [`protocol`] so the rest of the app never redefines them.
 
+mod backoff;
 pub mod client;
+mod failure;
 pub mod launcher;
+mod probe;
+pub mod supervisor;
 
 pub use client::{Client, Incoming};
+pub use failure::Failure;
 pub use kanata_tcp_protocol as protocol;
 pub use launcher::LaunchOptions;
+pub use probe::{Probe, probe};
+pub use supervisor::{SessionState, Supervisor, SupervisorEvent, SupervisorOptions};
 
 /// Errors from talking to or launching Kanata.
 #[derive(Debug, thiserror::Error)]

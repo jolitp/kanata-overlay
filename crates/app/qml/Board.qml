@@ -6,6 +6,8 @@ import QtQuick
 Item {
     id: board
     required property var overlay
+    // KanataState: managed / attached / restarting … (may be null)
+    property var kanata: null
     property real unit: 54 // pixels per keyboard unit (1u)
     readonly property real pad: 16
 
@@ -67,9 +69,13 @@ Item {
             elide: Text.ElideRight
             color: "#8a8a8a"
             font.pixelSize: 12
-            text: board.overlay.notices.length > 0
-                  ? board.overlay.status + " · " + board.overlay.notices
-                  : board.overlay.status
+            // While a managed Kanata is down, its state says why; "connecting to …" adds nothing.
+            readonly property bool managedDown: !!board.kanata && board.kanata.mode === "managed"
+                                                && !board.overlay.connected
+            text: [board.kanata ? board.kanata.stateText : "",
+                   managedDown ? "" : board.overlay.status,
+                   board.overlay.notices]
+                  .filter(s => s.length > 0).join(" · ")
         }
     }
 

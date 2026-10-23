@@ -25,6 +25,8 @@ shell's `kanata` binary.
   2. send `RequestCurrentLayerName {}`;
   3. wait up to 1 s for any line that parses as a `kanata_client::protocol::ServerMessage`.
 
+  **Changed 2026-10-23**: step 2 was dropped. Kanata 1.12 greets every new client with `LayerChange`, so the probe only listens; sending a request and hanging up made Kanata log "Broken pipe" (found in T024).
+
   If a message arrives, the overlay **attaches**. If nothing is listening, the overlay **manages** (only if `--config` was given). If something answers but not with Kanata's protocol, the overlay manages on a free port (`free_port()`; spec edge case).
 - **Rationale**:
   - Real Kanata answers the request with `CurrentLayerName`, and `just fake-kanata` sends `LayerChange` on connect. Both count as Kanata.
@@ -88,4 +90,4 @@ shell's `kanata` binary.
   - `NotInstalled`;
   - stop → the child is gone within 1.5 s;
   - **PDEATHSIG**: spawning from a thread that then exits must kill the child. This is a direct test of the R1 mechanism.
-- **Manual tests** with real Kanata, for the keyboard grab: quickstart §3, kill/crash scenarios, and SC-002's 10 trials. The escape hatch if a test misbehaves: the keyboard still works through Kanata, and `pkill kanata` from a terminal stops it.
+- **Manual tests** with real Kanata, for the keyboard grab: quickstart §3, kill/crash scenarios, and SC-002's 10 trials. The escape hatch if a test misbehaves: the keyboard still works through Kanata, and `pkill -x kanata` from a terminal stops it.

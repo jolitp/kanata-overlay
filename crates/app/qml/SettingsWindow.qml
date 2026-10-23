@@ -8,6 +8,7 @@ ApplicationWindow {
     id: win
     required property var settings
     required property var overlay
+    required property var kanata
 
     title: qsTr("Kanata Overlay Settings")
     width: 420
@@ -124,6 +125,57 @@ ApplicationWindow {
             }
         }
 
+        Label { text: qsTr("Kanata") }
+        RowLayout {
+            Label {
+                Layout.fillWidth: true
+                elide: Text.ElideRight
+                text: win.kanata.mode === "none" ? qsTr("not managed")
+                      : win.kanata.mode + (win.kanata.stateText && win.kanata.stateText !== win.kanata.mode
+                                           ? " · " + win.kanata.stateText : "")
+            }
+            Button {
+                text: qsTr("Restart")
+                visible: win.kanata.canRestart
+                onClicked: win.kanata.restart()
+            }
+            Button {
+                text: qsTr("Start Kanata")
+                visible: win.kanata.canStart
+                onClicked: win.kanata.startManaged()
+            }
+            Button {
+                text: qsTr("Show log")
+                visible: win.kanata.mode === "managed"
+                onClicked: { logWindow.show(); logWindow.raise() }
+            }
+        }
+
+        // The header is short and can't be clicked; read messages in full here.
+        Label {
+            text: qsTr("Messages")
+            Layout.alignment: Qt.AlignTop
+            visible: messages.text.length > 0
+        }
+        Label {
+            id: messages
+            Layout.fillWidth: true
+            visible: text.length > 0
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+            text: [win.kanata.mode === "managed" && !win.overlay.connected ? win.kanata.stateText : "",
+                   win.overlay.notices.split(" · ").join("\n")]
+                  .filter(s => s.length > 0).join("\n")
+        }
+
+        Item { Layout.columnSpan: 2; Layout.fillWidth: true; implicitHeight: 4 }
+        Button {
+            Layout.columnSpan: 2
+            Layout.alignment: Qt.AlignRight
+            text: qsTr("Quit Kanata Overlay")
+            onClicked: Qt.quit()
+        }
+
         Label {
             Layout.columnSpan: 2
             Layout.fillWidth: true
@@ -131,5 +183,10 @@ ApplicationWindow {
             color: palette.placeholderText
             text: qsTr("Saved to %1").arg(win.settings.path || qsTr("(nowhere: no config directory)"))
         }
+    }
+
+    LogWindow {
+        id: logWindow
+        kanata: win.kanata
     }
 }

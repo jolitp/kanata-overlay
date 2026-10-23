@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -152,7 +153,10 @@ impl qobject::OverlayState {
             }
         }
 
-        spawn_connection(self.qt_thread(), args.address, args.config.clone());
+        let address = ADDRESS
+            .get_or_init(|| Arc::new(Mutex::new(args.address.clone())))
+            .clone();
+        spawn_connection(self.qt_thread(), address, args.config.clone());
     }
 
     /// Take a freshly read config and relabel the board.
@@ -228,7 +232,7 @@ impl qobject::OverlayState {
     }
 
     fn request_layer(self: Pin<&mut Self>, name: &QString) {
-        let address = self.rust().args.address.clone();
+        let address = current_address();
         let name = name.to_string();
         // Fire-and-forget on a short-lived connection; the main connection
         // will see the resulting LayerChange event.
@@ -267,10 +271,29 @@ fn load_layout(text: &str) -> layout::Result<Layout> {
 /// A state change to run on the Qt thread.
 type Update = Box<dyn FnOnce(Pin<&mut qobject::OverlayState>) + Send>;
 
+/// Where to connect to Kanata. `KanataState` changes it when it starts Kanata
+/// on another port, or attaches somewhere else.
+pub(crate) static ADDRESS: OnceLock<Arc<Mutex<String>>> = OnceLock::new();
+
+pub(crate) fn current_address() -> String {
+    ADDRESS
+        .get()
+        .and_then(|a| a.lock().ok().map(|a| a.clone()))
+        .unwrap_or_else(|| Args::default().address)
+}
+
+pub(crate) fn set_address(address: String) {
+    if let Some(a) = ADDRESS.get()
+        && let Ok(mut a) = a.lock()
+    {
+        *a = address;
+    }
+}
+
 /// Keep a connection to Kanata alive, reconnecting forever.
 fn spawn_connection(
     qt: cxx_qt::CxxQtThread<qobject::OverlayState>,
-    address: String,
+    shared_address: Arc<Mutex<String>>,
     config_path: Option<PathBuf>,
 ) {
     thread::spawn(move || {
@@ -279,6 +302,7 @@ fn spawn_connection(
             let _ = qt.queue(f);
         };
         loop {
+            let address = shared_address.lock().map(|a| a.clone()).unwrap_or_default();
             push(Box::new({
                 let address = address.clone();
                 move |mut o| {

@@ -5,14 +5,18 @@
 //! setup that makes root unnecessary), and talks to it over a localhost-only TCP
 //! port.
 //!
-//! Still to do (tracked as a Spec Kit feature, not here): readiness probing,
-//! log capture, restart-with-backoff and `PR_SET_PDEATHSIG` so Kanata can never
-//! outlive the overlay and leave the keyboard grabbed.
+//! Every Kanata this builds gets a parent-death signal, so it can never outlive
+//! the overlay and leave the keyboard grabbed (constitution III). Readiness,
+//! log capture and restarts live in [`crate::supervisor`].
 
 use std::ffi::OsString;
+use std::io;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::Result;
 
@@ -28,6 +32,9 @@ pub struct LaunchOptions {
     pub port: u16,
     /// Extra arguments appended verbatim (e.g. `--debug`).
     pub extra_args: Vec<OsString>,
+    /// Ask the kernel to SIGTERM the child when the thread that spawned it
+    /// dies. Spawn from a thread that lives as long as the app (research R1).
+    pub parent_death_signal: bool,
 }
 
 impl LaunchOptions {
@@ -37,6 +44,7 @@ impl LaunchOptions {
             config: config.into(),
             port,
             extra_args: Vec::new(),
+            parent_death_signal: true,
         }
     }
 
@@ -62,11 +70,30 @@ impl LaunchOptions {
 
     /// Build the `Command` (stdout/stderr piped for log capture).
     pub fn command(&self) -> Command {
+        self.command_with(self.args())
+    }
+
+    /// `kanata --cfg PATH --check --no-wait`: validates the config without
+    /// grabbing anything. Still a Kanata we start, so it gets the same
+    /// parent-death signal.
+    pub fn check_command(&self) -> Command {
+        self.command_with(vec![
+            "--cfg".into(),
+            self.config.clone().into_os_string(),
+            "--check".into(),
+            "--no-wait".into(),
+        ])
+    }
+
+    fn command_with(&self, args: Vec<OsString>) -> Command {
         let mut cmd = Command::new(&self.kanata_bin);
-        cmd.args(self.args())
+        cmd.args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        if self.parent_death_signal {
+            with_parent_death_signal(&mut cmd);
+        }
         cmd
     }
 
@@ -74,6 +101,45 @@ impl LaunchOptions {
     pub fn spawn(&self) -> Result<Child> {
         Ok(self.command().spawn()?)
     }
+}
+
+/// Make the child get SIGTERM when the spawning thread dies, and exit at once
+/// if the parent is already gone by the time the child runs.
+pub fn with_parent_death_signal(cmd: &mut Command) {
+    let parent = std::process::id() as libc::pid_t;
+    // SAFETY: the closure runs in the forked child before exec and only makes
+    // async-signal-safe calls (prctl, getppid); it allocates nothing.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if libc::getppid() != parent {
+                return Err(io::Error::other("parent exited before kanata started"));
+            }
+            Ok(())
+        });
+    }
+}
+
+/// Stop a child: SIGTERM, wait up to `grace`, then SIGKILL. Always reaps it.
+pub fn terminate(child: &mut Child, grace: Duration) -> io::Result<ExitStatus> {
+    if let Some(status) = child.try_wait()? {
+        return Ok(status);
+    }
+    // SAFETY: plain kill(2) on our own, not yet reaped child.
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
+    }
+    let deadline = Instant::now() + grace;
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    child.kill()?;
+    child.wait()
 }
 
 /// Ask the OS for a currently free localhost port.
