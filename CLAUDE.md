@@ -7,7 +7,8 @@ Project principles: `.specify/memory/constitution.md` (read before planning).
 
 - `crates/kanata-client` — Kanata TCP client (`Client`, `Incoming`) and process launcher (`LaunchOptions`). No Qt.
 - `crates/layout` — physical layouts: KLE import, own JSON format, legend → Kanata key-name guessing. No Qt.
-- `crates/app` — the `kanata-overlay` binary: cxx-qt bridge (`src/overlay_state.rs`) + QML (`qml/`).
+- `crates/settings` — overlay settings file, CLI overrides, placement maths. No Qt.
+- `crates/app` — the `kanata-overlay` binary: cxx-qt bridge (`src/*_state.rs`, `src/global_shortcut.rs`) + QML (`qml/`); `cpp/` holds thin C++ shims (KGlobalAccel, QGuiApplication statics).
 - `examples/` — sample KLE layout and Kanata config used by `just run` / `just kanata`.
 - `specs/` — Spec Kit feature specs (created by `/speckit-specify`).
 
@@ -25,3 +26,5 @@ Project principles: `.specify/memory/constitution.md` (read before planning).
 - Bridge blocks use `#[auto_cxx_name]` so QML sees camelCase names.
 - Never re-define Kanata protocol types; use `kanata_client::protocol`.
 - Never log or persist pressed-key data (constitution VI).
+- QML root is a `QtObject`, not an `Item`: since Qt 6.7 a `Window` inside an `Item` becomes a child window and never shows.
+- Qt logs go to journald unless `QT_FORCE_STDERR_LOGGING=1`; build before `timeout … cargo run`, or the timeout kills the compile.

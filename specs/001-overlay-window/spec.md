@@ -138,7 +138,7 @@ settings as far as the session allows.
 
 **Placement and appearance**
 
-- **FR-007**: Users MUST be able to choose the screen edge (top, bottom, left, right) the overlay is centred along, and a margin from that edge. Default: bottom edge, small margin.
+- **FR-007**: Users MUST be able to choose where the overlay sits: centred along an edge (top, bottom, left, right) or in a corner (top-left, top-right, bottom-left, bottom-right), and a margin from each edge it touches. Default: bottom edge, small margin.
 - **FR-008**: Users MUST be able to set the overlay's opacity from 10% to 100%. Default: 85%.
 - **FR-009**: Users MUST be able to set the overlay's scale from 50% to 300% of its default size. Default: 100%.
 - **FR-010**: Users MUST be able to choose which monitor shows the overlay. Default: the primary monitor.
@@ -155,7 +155,7 @@ settings as far as the session allows.
 
 **Show / hide**
 
-- **FR-014**: The app MUST provide a system-wide shortcut that toggles the overlay between shown and hidden, working while any other application is focused. Default combination: Meta+Alt+K.
+- **FR-014**: The app MUST provide a system-wide shortcut that toggles the overlay between shown and hidden, working while any other application is focused. Default combination: Meta+Ctrl+K.
 - **FR-015**: Users MUST be able to change both shortcut combinations (toggle overlay, open settings) through the desktop's standard shortcut settings.
 - **FR-016**: While hidden, the app MUST keep its Kanata connection and layer state, so the overlay is up to date the moment it is shown.
 - **FR-017**: If the shortcut cannot be registered, the app MUST keep running and tell the user.
@@ -184,9 +184,9 @@ settings as far as the session allows.
 ## Assumptions
 
 - The primary environment is KDE Plasma 6 on Wayland; other Wayland desktops get the fallback behaviour unless they happen to support overlays.
-- The overlay is centred along its chosen edge; free positioning by dragging is out of scope, since the overlay ignores mouse input. Corners can be added later.
+- The overlay is centred along its chosen edge or placed in a corner (corners added 2026-10-23 at the user's request); free positioning by dragging is out of scope, since the overlay ignores mouse input.
 - The overlay always starts shown, even if it was hidden when the app last quit; this avoids a "the app started but I can't see it" situation.
-- The default shortcut (Meta+Alt+K) is a suggestion; the desktop may refuse or change it, and the user can rebind it.
+- The default shortcut (Meta+Ctrl+K) is a suggestion; the desktop may refuse or change it, and the user can rebind it.
 - The current window's look (colours, key caps, header with connection state and layer name) stays as it is; this feature changes how and where it is shown, not what it shows.
 - The settings window covers only this feature's settings (edge, margin, opacity, scale, monitor); a tray icon, autostart and settings for later features belong to the "Desktop integration" feature.
 - The default settings-window shortcut (Meta+Alt+Shift+K) is rebindable like the toggle shortcut.

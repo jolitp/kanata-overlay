@@ -6,7 +6,7 @@ All types below live in the Qt-free `settings` crate (`crates/settings`) unless 
 
 ## Edge
 
-The screen edge the overlay is centred along.
+Where the overlay sits: centred along an edge, or in a corner (each corner touches two edges, and the margin applies to both).
 
 | Value | JSON | CLI |
 |-------|------|-----|
@@ -14,6 +14,8 @@ The screen edge the overlay is centred along.
 | Bottom (default) | `"bottom"` | `bottom` |
 | Left | `"left"` | `left` |
 | Right | `"right"` | `right` |
+| Top left / Top right | `"top-left"` / `"top-right"` | `top-left` / `top-right` |
+| Bottom left / Bottom right | `"bottom-left"` / `"bottom-right"` | `bottom-left` / `bottom-right` |
 
 ## Settings
 
@@ -116,5 +118,5 @@ The "missing features" list is derived from these values:
 |-------|-------|
 | `id` | `toggle-overlay` / `open-settings` |
 | `text` | "Show/hide overlay" / "Open overlay settings" (shown in System Settings) |
-| `default keys` | `Meta+Alt+K` / `Meta+Alt+Shift+K` |
+| `default keys` | `Meta+Ctrl+K` / `Meta+Alt+Shift+K` |
 | `registered` | bool. When false, a notice is shown (FR-017). |

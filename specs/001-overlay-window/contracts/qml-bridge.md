@@ -33,17 +33,19 @@ on `Component.onCompleted: load()`.
 
 | Property | Type | Notes |
 |----------|------|-------|
-| `edge` | QString | `"top"`, `"bottom"`, `"left"` or `"right"` |
+| `edge` | QString | `"top"`, `"bottom"`, `"left"`, `"right"`, `"top-left"`, `"top-right"`, `"bottom-left"` or `"bottom-right"` |
 | `margin` | i32 | Logical px |
 | `opacity` | f64 | 0.10–1.00 (converted from %) |
 | `scale` | i32 | Percent, as configured (before capping) |
 | `screenName` | QString | Empty = primary |
+| `path` | QString | The settings file in use, for messages |
 
 | Invokable | Effect |
 |-----------|--------|
-| `load()` | Reads the file and applies the CLI overrides. Warnings go to `OverlayState.addNotice`, or are kept as a property the overlay reads. |
-| `setEdge(QString)`, `setMargin(i32)`, `setOpacityPercent(i32)`, `setScalePercent(i32)`, `setScreenName(QString)` | Validate and clamp, drop that field's override, and update the property. Changes are live and not saved yet. |
-| `save() -> bool` | Writes the settings file atomically. Returns false (and adds a notice) if the write fails. |
+| `load()` | Reads the file and applies the CLI overrides. Each warning is emitted as the `warning(text)` signal, which `Main.qml` forwards to `OverlayState.addNotice`. |
+| `updateEdge(QString)`, `updateMargin(i32)`, `updateOpacityPercent(i32)`, `updateScalePercent(i32)`, `updateScreenName(QString)` | Validate and clamp, drop that field's override, and update the property. Changes are live and not saved yet. (Named `update*` because cxx-qt already generates `set*` setters for the properties.) |
+| `save() -> bool` | Writes the settings file atomically if anything changed since the last save (so an unreadable or newer file is never replaced without an edit). Returns false, and emits `warning`, if the write fails. |
+| `warning(text)` | signal | A settings problem for the status line. |
 | `placement(screenX, screenY, screenW, screenH, baseW, baseH) -> QString` | Calls the `settings` crate's placement function and returns JSON `{x, y, width, height, scale, capped}` for QML to parse. Used to size the window in both variants, and to position it on X11. |
 
 ## GlobalShortcut *(new, backed by the C++ KGlobalAccel shim)*
@@ -52,12 +54,12 @@ on `Component.onCompleted: load()`.
 |----------|------|-------|
 | `shortcutId` | QString | `toggle-overlay` / `open-settings` |
 | `text` | QString | Label in System Settings › Shortcuts |
-| `defaultKeys` | QString | `QKeySequence` portable text, e.g. `Meta+Alt+K` |
+| `defaultKeys` | QString | `QKeySequence` portable text, e.g. `Meta+Ctrl+K` |
 | `registered` | bool | Read-only from QML |
 
 | Member | Kind | Notes |
 |--------|------|-------|
-| `register()` | invokable | Called once from `Component.onCompleted`. Sets `registered`. |
+| `registerShortcut()` | invokable | Called once from `Component.onCompleted`. Sets `registered`. (Not `register`: that is a reserved word in C++.) |
 | `activate()` | invokable | Called by the C++ shim when the shortcut fires. Emits `activated`. |
 | `activated()` | signal | QML connects it to `overlay.toggleOverlay()` or to opening the settings window. |
 
@@ -68,6 +70,9 @@ bool kog_register_global_shortcut(QObject &receiver, const QString &id,
                                   const QString &text, const QString &defaultKeys);
 ```
 
+`crates/app/cpp/qt_extras.{h,cpp}` wraps two `QGuiApplication` statics that cxx-qt-lib
+doesn't expose: `platformName()` and `setDesktopFileName()`.
+
 The shim creates a `QAction` parented to `receiver` and sets its component properties. It
 calls `KGlobalAccel::setGlobalShortcut` and connects `triggered` to
 `QMetaObject::invokeMethod(&receiver, "activate")`. It returns the registration result. It
@@ -77,7 +82,7 @@ never inspects key events (FR-018).
 
 | File | Role |
 |------|------|
-| `qml/Main.qml` | Root `Item` (a plain `QtObject` can't hold child objects). It creates `OverlayState`, `SettingsState`, both `GlobalShortcut`s and the settings window, and a `Loader` that picks the overlay variant with `setSource(url, { overlay, settings })`, so the windows' `required` properties are set when they are created. |
+| `qml/Main.qml` | Root `QtObject` holding its objects in an explicit `property list<QtObject>`. It is not an `Item`, because since Qt 6.7 a `Window` inside an `Item` becomes a child window and never shows. It creates `OverlayState`, `SettingsState`, both `GlobalShortcut`s and the settings window. The overlay variant is created with `Qt.createComponent(url).createObject(root, { overlay, settings })`, so its `required` properties are set when it is created and it stays a top-level window. |
 | `qml/Board.qml` | The header and keys, extracted from today's `Main.qml`. It reports its base (100%) size. |
 | `qml/LayerShellOverlay.qml` | `Window` with layer-shell attached properties (research R1, R2). |
 | `qml/FallbackOverlay.qml` | `Window` with bypass / top / transparent-for-input flags and absolute placement (research R3). |

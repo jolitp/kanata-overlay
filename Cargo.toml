@@ -27,6 +27,10 @@ cxx-qt-build = { version = "0.10", features = ["link_qt_object_files"] }
 
 kanata-client = { path = "crates/kanata-client" }
 layout = { path = "crates/layout" }
+settings = { path = "crates/settings" }
+
+# Layer-shell probe (research R4).
+wayland-client = "0.31"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

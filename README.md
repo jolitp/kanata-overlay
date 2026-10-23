@@ -6,8 +6,9 @@ Rust + Qt 6/QML (via [cxx-qt](https://github.com/KDAB/cxx-qt)), built for KDE Pl
 
 ![scaffold](docs/scaffold.png)
 
-*Current state: the scaffold window. It imports a KLE layout, connects to Kanata's
-TCP server and shows the active layer. The overlay behaviour comes next (see Roadmap).*
+*Current state: an always-on-top, click-through overlay (KDE Plasma Wayland; best
+effort on X11). It imports a KLE layout, connects to Kanata's TCP server and shows the
+active layer. Key labels from your `.kbd` come next (see Roadmap).*
 
 ## Why a layout designer?
 
@@ -46,6 +47,29 @@ Run `just` for every task. On non-NixOS distros, if Qt Quick fails to create an
 OpenGL context from the Nix shell, run the app through
 [nixGL](https://github.com/nix-community/nixGL) or with `QT_QUICK_BACKEND=software`.
 
+## Using the overlay
+
+The overlay never takes focus or input: keep typing and clicking through it.
+
+| Shortcut | Action |
+| --- | --- |
+| **Meta+Ctrl+K** | Show / hide the overlay |
+| **Meta+Alt+Shift+K** | Open the settings window (position: edge or corner, margin, opacity, scale, monitor) |
+
+Both can be rebound in *System Settings › Shortcuts › Kanata Overlay*. Settings are
+saved to `$XDG_CONFIG_HOME/kanata-overlay/settings.json` (usually
+`~/.config/kanata-overlay/settings.json`). Override them for one run without touching
+the file:
+
+```sh
+just run --edge bottom-right --margin 24 --opacity 60 --scale 120 --screen DP-1
+just run --settings /tmp/test-settings.json   # use another settings file
+```
+
+Problems (missing layer-shell, a shortcut that could not be registered, a bad
+settings value) are shown in the overlay's header. Qt logs go to the journal unless
+you set `QT_FORCE_STDERR_LOGGING=1`.
+
 ## Running Kanata without root
 
 Kanata needs to read `/dev/input/event*` and write `/dev/uinput`. Grant that to your
@@ -69,7 +93,8 @@ The app is designed never to need root at runtime (constitution, principle III).
 | --- | --- |
 | `crates/kanata-client` | Kanata TCP client and process launcher (no Qt) |
 | `crates/layout` | KLE import and the app's layout format (no Qt) |
-| `crates/app` | `kanata-overlay` binary: cxx-qt bridge + QML |
+| `crates/settings` | Overlay settings file, CLI overrides, placement maths (no Qt) |
+| `crates/app` | `kanata-overlay` binary: cxx-qt bridge + QML; `cpp/` holds thin C++ shims (KGlobalAccel) |
 | `examples/` | Sample KLE layout and Kanata config |
 | `.specify/` | Spec Kit templates, scripts and the [constitution](.specify/memory/constitution.md) |
 | `.claude/skills/` | Spec Kit commands for Claude Code (`/speckit-*`) |
@@ -90,9 +115,10 @@ from Claude Code in this directory:
 
 Suggested order for the first Spec Kit features:
 
-1. **Overlay window**: always-on-top, click-through layer-shell surface on Plasma
-   Wayland (LayerShellQt via a small C++ shim), screen position and opacity settings,
-   toggle shortcut; X11 fallback via window hints.
+1. ~~**Overlay window**~~ ✅ done in [`specs/001-overlay-window`](specs/001-overlay-window/spec.md):
+   always-on-top, click-through layer-shell surface on Plasma Wayland (LayerShellQt's QML
+   module), edge / margin / opacity / scale / monitor settings, global shortcuts
+   (KGlobalAccel); X11 fallback via window hints.
 2. **Layer actions on keys**: parse `defsrc` / `deflayer` / `defalias` from the
    `.kbd` file (re-parse on `ConfigFileReload`) and label each key with its action.
 3. **Managed Kanata**: launch Kanata with a localhost TCP port, readiness probing,

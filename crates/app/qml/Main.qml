@@ -2,81 +2,57 @@ import QtQuick
 import QtQuick.Window
 import io.github.jolitp.kanataoverlay
 
-// Scaffold window: draws the physical layout and shows the active Kanata layer.
-// Turning this into a click-through, always-on-top layer-shell overlay is the
-// first Spec Kit feature (see README).
-Window {
+// Root object: the state, the overlay window (layer-shell or fallback), the
+// settings window and the two global shortcuts. Not an Item: since Qt 6.7 a
+// Window inside an Item becomes a child window of that item's window.
+QtObject {
     id: root
-    visible: true
-    color: "#1e1f22"
-    title: "kanata-overlay"
+    property Window overlayWindow
 
-    readonly property real unit: 54 // pixels per keyboard unit (1u)
-    readonly property real pad: 16
-    property var layout: overlay.layoutJson.length > 0 ? JSON.parse(overlay.layoutJson) : ({ name: "", keys: [] })
-    readonly property var bounds: {
-        // Bounding box of all key corners, after KLE rotation around (rx, ry).
-        let w = 0, h = 0
-        for (const k of layout.keys) {
-            const a = (k.rotation || 0) * Math.PI / 180
-            const rx = k.rx || 0, ry = k.ry || 0
-            for (const [cx, cy] of [[k.x, k.y], [k.x + k.width, k.y],
-                                    [k.x, k.y + k.height], [k.x + k.width, k.y + k.height]]) {
-                const dx = cx - rx, dy = cy - ry
-                w = Math.max(w, rx + dx * Math.cos(a) - dy * Math.sin(a))
-                h = Math.max(h, ry + dx * Math.sin(a) + dy * Math.cos(a))
-            }
+    property list<QtObject> objects: [
+        OverlayState {
+            id: overlayState
+        },
+        SettingsState {
+            id: settingsState
+            onWarning: text => overlayState.addNotice(text)
+        },
+        SettingsWindow {
+            id: settingsWindow
+            settings: settingsState
+            overlay: overlayState
+        },
+        GlobalShortcut {
+            id: toggleShortcut
+            shortcutId: "toggle-overlay"
+            text: "Show/hide overlay"
+            defaultKeys: "Meta+Ctrl+K"
+            onActivated: overlayState.toggleOverlay()
+        },
+        GlobalShortcut {
+            id: settingsShortcut
+            shortcutId: "open-settings"
+            text: "Open overlay settings"
+            defaultKeys: "Meta+Alt+Shift+K"
+            onActivated: settingsWindow.open()
         }
-        return { w: w, h: h }
-    }
+    ]
 
-    width: Math.max(360, bounds.w * unit + 2 * pad)
-    height: bounds.h * unit + 2 * pad + header.height + 8
+    Component.onCompleted: {
+        overlayState.start()
+        settingsState.load()
 
-    OverlayState {
-        id: overlay
-        Component.onCompleted: start()
-    }
+        // Created imperatively so its required properties are set at creation.
+        const variant = Qt.createComponent(overlayState.useLayerShell ? "LayerShellOverlay.qml" : "FallbackOverlay.qml")
+        overlayWindow = variant.createObject(root, { overlay: overlayState, settings: settingsState })
+        if (!overlayWindow)
+            console.error(variant.errorString())
 
-    Row {
-        id: header
-        x: root.pad
-        y: 8
-        height: 32
-        spacing: 12
-
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            width: 10; height: 10; radius: 5
-            color: overlay.connected ? "#4caf50" : "#9e9e9e"
-        }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            color: "#e8e8e8"
-            font.pixelSize: 16
-            font.bold: true
-            text: overlay.connected ? (overlay.currentLayer || "…") : "kanata not connected"
-        }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            color: "#8a8a8a"
-            font.pixelSize: 12
-            text: overlay.status
-        }
-    }
-
-    Item {
-        id: board
-        x: root.pad
-        y: header.y + header.height + 8
-
-        Repeater {
-            model: root.layout.keys
-            delegate: KeyCap {
-                required property var modelData
-                key: modelData
-                unit: root.unit
-            }
-        }
+        toggleShortcut.registerShortcut()
+        if (!toggleShortcut.registered)
+            overlayState.addNotice("show/hide shortcut unavailable — set one in System Settings › Shortcuts")
+        settingsShortcut.registerShortcut()
+        if (!settingsShortcut.registered)
+            overlayState.addNotice("settings shortcut unavailable — edit " + settingsState.path)
     }
 }

@@ -3,7 +3,7 @@
 ```
 kanata-overlay [--connect ADDR] [--layout FILE]
                [--settings FILE]
-               [--edge top|bottom|left|right] [--margin PX]
+               [--edge top|bottom|left|right|top-left|top-right|bottom-left|bottom-right] [--margin PX]
                [--opacity PERCENT] [--scale PERCENT] [--screen NAME]
 ```
 
@@ -12,7 +12,7 @@ kanata-overlay [--connect ADDR] [--layout FILE]
 | `--connect`, `-c` | existing | `host:port` | Kanata TCP address (default `127.0.0.1:7070`). |
 | `--layout`, `-l` | existing | path | KLE or own-format layout. |
 | `--settings` | new | path | Use this settings file instead of the default path, for both reading and saving. |
-| `--edge` | new | `top` `bottom` `left` `right` | Override for this run only. |
+| `--edge` | new | `top` `bottom` `left` `right` `top-left` `top-right` `bottom-left` `bottom-right` | Override for this run only. |
 | `--margin` | new | integer 0–500 | Override for this run only. |
 | `--opacity` | new | integer 10–100 | Override for this run only. |
 | `--scale` | new | integer 50–300 | Override for this run only. |

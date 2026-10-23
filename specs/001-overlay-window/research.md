@@ -23,6 +23,13 @@ KGlobalAccel (KF6) 6.30.0, cxx-qt 0.10.0.
     QML module makes unnecessary.
   - `LayerTop`. Full-screen windows cover it, so it would fail FR-001.
   - Exclusion zone `-1`. The overlay would sit on top of the Plasma panel.
+- **Implementation notes (2026-10-23)**:
+  - `LayerShell.Window.margins` is a `QMargins`, which QML can't construct. The margin is
+    instead transparent padding on the anchored edge of the window; the whole window takes
+    no input, so this is equivalent.
+  - `LayerShell.Window.screen` expects a `QScreen*`, but QML's `Qt.application.screens`
+    gives `QQuickScreenInfo`. Only the window's own `screen` is set; LayerShellQt's default
+    `ScreenFromQWindow` follows it.
 - **Notes**: Layer-shell properties must be set before the surface is first mapped. The
   window is created with `visible: false` and shown once the component is complete. When the
   target screen changes, the window is hidden and shown again, so the surface is re-created
@@ -102,7 +109,7 @@ KGlobalAccel (KF6) 6.30.0, cxx-qt 0.10.0.
     a large dependency.
 - **Failure handling**: If `setGlobalShortcut` returns false (no kglobalacceld, e.g. a
   non-Plasma X11 window manager), `registered` stays false and a notice is shown (FR-017).
-- **Defaults**: toggle `Meta+Alt+K`, settings `Meta+Alt+Shift+K`. Component name
+- **Defaults**: toggle `Meta+Ctrl+K`, settings `Meta+Alt+Shift+K`. Component name
   `kanata-overlay`, display name "Kanata Overlay".
 - **App identity**: `main.rs` sets `QCoreApplication::applicationName("kanata-overlay")` and
   `QGuiApplication::desktopFileName("io.github.jolitp.kanataoverlay")`. The latter also
