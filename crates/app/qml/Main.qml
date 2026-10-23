@@ -2,12 +2,13 @@ import QtQuick
 import QtQuick.Window
 import io.github.jolitp.kanataoverlay
 
-// Root object: the state, the overlay window (layer-shell or fallback), the
-// settings window and the two global shortcuts. Not an Item: since Qt 6.7 a
-// Window inside an Item becomes a child window of that item's window.
+// Root object: the global state, one DeviceView per device, the settings
+// window and the two global shortcuts. Not an Item: since Qt 6.7 a Window
+// inside an Item becomes a child window of that item's window.
 QtObject {
     id: root
-    property Window overlayWindow
+    /// Device id → its DeviceState, for the settings window.
+    property var deviceStates: ({})
 
     property list<QtObject> objects: [
         OverlayState {
@@ -16,25 +17,40 @@ QtObject {
         SettingsState {
             id: settingsState
             onWarning: text => overlayState.addNotice(text)
+            onDeviceIdsChanged: root.syncDevices()
         },
-        KanataState {
-            id: kanataState
+        // Updated incrementally, so adding or removing one device never
+        // recreates (and restarts) the others.
+        ListModel {
+            id: deviceModel
         },
-        Connections {
-            target: overlayState
-            function onConnectedChanged() { kanataState.setConnectedState(overlayState.connected) }
-        },
-        // A managed Kanata stops with the overlay (constitution III); crashes and
-        // signals are covered by the parent-death signal.
-        Connections {
-            target: Qt.application
-            function onAboutToQuit() { kanataState.shutdown() }
+        Instantiator {
+            id: devices
+            active: false
+            model: deviceModel
+            // DeviceView's own required deviceId is filled from the model role.
+            delegate: DeviceView {
+                required property int index
+                first: index === 0
+                settings: settingsState
+                overlay: overlayState
+            }
+            onObjectAdded: root.updateDeviceStates()
+            onObjectRemoved: root.updateDeviceStates()
         },
         SettingsWindow {
             id: settingsWindow
             settings: settingsState
             overlay: overlayState
-            kanata: kanataState
+            deviceStates: root.deviceStates
+        },
+        // Configs can be edited and devices plugged in at any time: re-run the
+        // device check now and then (cheap: a few small files and /proc).
+        Timer {
+            interval: 2000
+            repeat: true
+            running: devices.active
+            onTriggered: settingsState.recheck()
         },
         GlobalShortcut {
             id: toggleShortcut
@@ -52,16 +68,32 @@ QtObject {
         }
     ]
 
+    function syncDevices() {
+        const ids = JSON.parse(settingsState.deviceIds || "[]")
+        for (let i = deviceModel.count - 1; i >= 0; i--)
+            if (!ids.includes(deviceModel.get(i).deviceId))
+                deviceModel.remove(i)
+        const present = Array.from({ length: deviceModel.count }, (_, i) => deviceModel.get(i).deviceId)
+        for (const id of ids)
+            if (!present.includes(id))
+                deviceModel.append({ deviceId: id })
+    }
+
+    function updateDeviceStates() {
+        const map = {}
+        for (let i = 0; i < devices.count; i++) {
+            const view = devices.objectAt(i)
+            if (view)
+                map[view.deviceId] = view.device
+        }
+        deviceStates = map
+    }
+
     Component.onCompleted: {
         overlayState.start()
-        kanataState.start()
         settingsState.load()
-
-        // Created imperatively so its required properties are set at creation.
-        const variant = Qt.createComponent(overlayState.useLayerShell ? "LayerShellOverlay.qml" : "FallbackOverlay.qml")
-        overlayWindow = variant.createObject(root, { overlay: overlayState, settings: settingsState, kanata: kanataState })
-        if (!overlayWindow)
-            console.error(variant.errorString())
+        syncDevices()
+        devices.active = true
 
         toggleShortcut.registerShortcut()
         if (!toggleShortcut.registered)

@@ -65,6 +65,32 @@ fn is_zero(v: &f64) -> bool {
 }
 
 impl Layout {
+    /// A plain grid of 1u keys, `columns` per row, for a device without a
+    /// layout file: every key is bound to its Kanata name (feature 004, R7).
+    pub fn grid(name: &str, names: &[String], columns: usize) -> Self {
+        let columns = columns.max(1);
+        let keys = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| Key {
+                x: (i % columns) as f64,
+                y: (i / columns) as f64,
+                width: 1.0,
+                height: 1.0,
+                rotation: 0.0,
+                rx: 0.0,
+                ry: 0.0,
+                kanata: Some(n.clone()),
+                legend: n.clone(),
+            })
+            .collect();
+        Self {
+            version: FORMAT_VERSION,
+            name: name.to_owned(),
+            keys,
+        }
+    }
+
     /// Import a layout exported from keyboard-layout-editor.com
     /// ("Download JSON", or the raw data tab wrapped in `[...]`).
     ///
@@ -179,6 +205,21 @@ pub fn guess_kanata_name(legend: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_of_names() {
+        let names: Vec<String> = (0..13).map(|i| format!("k{i}")).collect();
+        let g = Layout::grid("mouse", &names, 12);
+        assert_eq!(g.keys.len(), 13);
+        assert_eq!((g.keys[12].x, g.keys[12].y), (0.0, 1.0));
+        assert!(
+            g.keys
+                .iter()
+                .zip(&names)
+                .all(|(k, n)| k.kanata.as_ref() == Some(n))
+        );
+        assert!(g.unbound().next().is_none());
+    }
 
     // Two rows, including a 1.5u Tab and a rotated thumb key like you would find
     // on a split/ergonomic board.

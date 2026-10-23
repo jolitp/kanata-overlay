@@ -1,6 +1,8 @@
-//! Overlay settings: where the overlay sits and how it looks.
+//! Overlay settings: the devices the overlay shows, and where each board sits
+//! and how it looks.
 //!
 //! - [`file`]: the versioned JSON settings file (lenient load, atomic save).
+//! - [`devices`]: the device list, including the implicit single device.
 //! - [`cli`]: command-line overrides for a single run.
 //! - [`placement`]: where the overlay goes on a screen and how far it may scale.
 //!
@@ -9,20 +11,23 @@
 
 use std::fmt;
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use serde::Serialize;
 
 mod cli;
+mod devices;
 mod file;
 mod placement;
 
 pub use cli::{CliError, Overrides};
+pub use devices::{default_address, slug, typed_path};
 pub use file::{LoadOutcome, SettingsWarning, default_path, load, save};
 pub use placement::{Placement, place};
 
-/// Current settings file version.
-pub const VERSION: u32 = 1;
+/// Current settings file version (2: a list of devices).
+pub const VERSION: u32 = 2;
 /// Margin from the screen edge, logical pixels.
 pub const MARGIN_RANGE: RangeInclusive<u32> = 0..=500;
 /// Opacity, percent.
@@ -117,10 +122,9 @@ impl FromStr for Edge {
     }
 }
 
-/// The persisted user preferences.
+/// Where one board sits and how it looks (per device).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct Settings {
-    pub version: u32,
+pub struct Appearance {
     pub edge: Edge,
     pub margin: u32,
     pub opacity: u8,
@@ -129,15 +133,46 @@ pub struct Settings {
     pub screen: Option<String>,
 }
 
-impl Default for Settings {
+impl Default for Appearance {
     fn default() -> Self {
         Self {
-            version: VERSION,
             edge: Edge::Bottom,
             margin: 16,
             opacity: 85,
             scale: 100,
             screen: None,
+        }
+    }
+}
+
+/// A device the overlay shows, with its own Kanata and board.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Device {
+    /// Unique, `[a-z0-9-]{1,32}`.
+    pub id: String,
+    /// 1–40 characters, shown on the board and in the settings window.
+    pub name: String,
+    /// The Kanata `.kbd` config; without it there is no Kanata and no labels.
+    pub config: Option<PathBuf>,
+    /// KLE or own-format layout; without it the board is a grid of `defsrc`.
+    pub layout: Option<PathBuf>,
+    /// `host:port` of its Kanata; `None` → [`default_address`] by position.
+    pub address: Option<String>,
+    pub appearance: Appearance,
+}
+
+/// The persisted settings: the device list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Settings {
+    pub version: u32,
+    pub devices: Vec<Device>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            version: VERSION,
+            devices: Vec::new(),
         }
     }
 }

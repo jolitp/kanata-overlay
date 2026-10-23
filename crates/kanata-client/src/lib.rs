@@ -11,12 +11,17 @@
 mod backoff;
 pub mod client;
 mod failure;
+pub mod input_devices;
 pub mod launcher;
 mod probe;
 pub mod supervisor;
 
 pub use client::{Client, Incoming};
 pub use failure::Failure;
+pub use input_devices::{
+    DeviceVerdict, InputDevice, check_devices, conflicts, grabs, input_devices,
+    parse_input_devices, resolve_links,
+};
 pub use kanata_tcp_protocol as protocol;
 pub use launcher::LaunchOptions;
 pub use probe::{Probe, probe};

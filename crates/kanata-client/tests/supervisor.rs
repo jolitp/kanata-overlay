@@ -27,6 +27,7 @@ fn quick() -> SupervisorOptions {
         ready_timeout: Duration::from_secs(3),
         backoff_unit: Duration::from_millis(100),
         stop_grace: Duration::from_millis(500),
+        device_retry: Duration::from_millis(200),
     }
 }
 
@@ -141,6 +142,7 @@ fn supervisor_scenarios() {
     never_answer_fails();
     waits_for_a_keyboard();
     not_installed();
+    missing_device_never_gives_up();
     attaches_when_another_kanata_wins_the_port();
 }
 
@@ -275,6 +277,23 @@ fn waits_for_a_keyboard() {
         rx.try_iter()
             .all(|e| !matches!(e, SupervisorEvent::State(SessionState::Restarting { .. })))
     );
+    sup.stop();
+}
+
+fn missing_device_never_gives_up() {
+    clear_env();
+    let (sup, rx) = supervise(&[("FAKE_START", "no-device")], quick());
+    expect(
+        &rx,
+        Duration::from_secs(3),
+        state(SessionState::WaitingForKeyboard),
+    );
+    // Far more than 5 attempts at a 200 ms retry; still no give-up or backoff.
+    thread::sleep(Duration::from_secs(3));
+    assert!(rx.try_iter().all(|e| !matches!(
+        e,
+        SupervisorEvent::State(SessionState::Failed(_) | SessionState::Restarting { .. })
+    )));
     sup.stop();
 }
 

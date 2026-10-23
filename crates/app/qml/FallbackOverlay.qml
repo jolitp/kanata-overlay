@@ -6,25 +6,32 @@ import QtQuick.Window
 // undecorated, on every desktop, out of the task bar and never focused.
 Window {
     id: win
+    required property var device
+    required property string deviceId
     required property var overlay
     required property var settings
-    required property var kanata
+    property bool first: false
 
+    // This device's settings; touching revision re-reads them on every change.
+    readonly property var cfg: {
+        void settings.revision
+        return JSON.parse(settings.device(deviceId))
+    }
+    // The configured monitor, or the primary one (feature 001, research R8).
     readonly property var targetScreen: {
         for (const s of Qt.application.screens)
-            if (s.name === settings.screenName)
+            if (s.name === cfg.screen)
                 return s
         return Qt.application.screens[0]
     }
     readonly property var place: {
-        // placement() reads these in Rust, where QML can't see them: touch
-        // them here so the binding re-runs when they change.
-        void settings.edge, settings.margin, settings.scale
-        return JSON.parse(settings.placement(
-            targetScreen.virtualX, targetScreen.virtualY, targetScreen.width, targetScreen.height,
-            board.baseSize.width, board.baseSize.height))
+        // placement() reads the device's settings in Rust, where QML can't
+        // see them: touch revision so the binding re-runs when they change.
+        void settings.revision
+        return JSON.parse(settings.placement(deviceId,
+            Qt.rect(targetScreen.virtualX, targetScreen.virtualY, targetScreen.width, targetScreen.height),
+            board.baseSize))
     }
-
     x: place.x
     y: place.y
     width: place.width
@@ -38,16 +45,17 @@ Window {
 
     Board {
         id: board
+        device: win.device
         overlay: win.overlay
-        kanata: win.kanata
-        opacity: win.settings.opacity
+        first: win.first
+        opacity: win.cfg.opacity
         scale: win.place.scale
         transformOrigin: Item.TopLeft
     }
 
     function checkScreen() {
-        if (settings.screenName !== "" && targetScreen.name !== settings.screenName)
-            overlay.addNotice("monitor " + settings.screenName + " not found, using " + targetScreen.name)
+        if (cfg.screen && targetScreen.name !== cfg.screen)
+            overlay.addNotice(cfg.name + ": monitor " + cfg.screen + " not found, using " + targetScreen.name)
     }
 
     Component.onCompleted: {
@@ -55,5 +63,5 @@ Window {
         visible = Qt.binding(() => overlay.overlayVisible)
     }
     onTargetScreenChanged: checkScreen()
-    onPlaceChanged: if (place.capped) overlay.addNotice("scale capped to fit the screen")
+    onPlaceChanged: if (place.capped) overlay.addNotice(cfg.name + ": scale capped to fit the screen")
 }

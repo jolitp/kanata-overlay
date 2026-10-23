@@ -7,41 +7,48 @@ import org.kde.layershell as LayerShell
 // through to the windows below (research R1, R2).
 Window {
     id: win
+    required property var device
+    required property string deviceId
     required property var overlay
     required property var settings
-    required property var kanata
+    property bool first: false
 
-    // The configured monitor, or the primary one (research R8).
+    // This device's settings; touching revision re-reads them on every change.
+    readonly property var cfg: {
+        void settings.revision
+        return JSON.parse(settings.device(deviceId))
+    }
+    // The configured monitor, or the primary one (feature 001, research R8).
     readonly property var targetScreen: {
         for (const s of Qt.application.screens)
-            if (s.name === settings.screenName)
+            if (s.name === cfg.screen)
                 return s
         return Qt.application.screens[0]
     }
     readonly property var place: {
-        // placement() reads these in Rust, where QML can't see them: touch
-        // them here so the binding re-runs when they change.
-        void settings.edge, settings.margin, settings.scale
-        return JSON.parse(settings.placement(
-            targetScreen.virtualX, targetScreen.virtualY, targetScreen.width, targetScreen.height,
-            board.baseSize.width, board.baseSize.height))
+        // placement() reads the device's settings in Rust, where QML can't
+        // see them: touch revision so the binding re-runs when they change.
+        void settings.revision
+        return JSON.parse(settings.placement(deviceId,
+            Qt.rect(targetScreen.virtualX, targetScreen.virtualY, targetScreen.width, targetScreen.height),
+            board.baseSize))
     }
     // Which screen edges the overlay touches: one for an edge, two for a corner.
-    readonly property bool atTop: settings.edge.startsWith("top")
-    readonly property bool atBottom: settings.edge.startsWith("bottom")
-    readonly property bool atLeft: settings.edge.endsWith("left")
-    readonly property bool atRight: settings.edge.endsWith("right")
+    readonly property bool atTop: cfg.edge.startsWith("top")
+    readonly property bool atBottom: cfg.edge.startsWith("bottom")
+    readonly property bool atLeft: cfg.edge.endsWith("left")
+    readonly property bool atRight: cfg.edge.endsWith("right")
 
     // QMargins can't be built in QML, so the margin is transparent padding on
     // the anchored edges; it takes no input anyway.
-    width: place.width + (atLeft || atRight ? settings.margin : 0)
-    height: place.height + (atTop || atBottom ? settings.margin : 0)
+    width: place.width + (atLeft || atRight ? cfg.margin : 0)
+    height: place.height + (atTop || atBottom ? cfg.margin : 0)
     screen: targetScreen
     color: "transparent"
     visible: false // shown once the layer-shell properties are in place
     flags: Qt.FramelessWindowHint | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
 
-    LayerShell.Window.scope: "kanata-overlay"
+    LayerShell.Window.scope: "kanata-overlay-" + deviceId
     LayerShell.Window.layer: LayerShell.Window.LayerOverlay
     LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityNone
     LayerShell.Window.activateOnShow: false
@@ -54,11 +61,12 @@ Window {
 
     Board {
         id: board
+        device: win.device
         overlay: win.overlay
-        kanata: win.kanata
-        x: win.atLeft ? win.settings.margin : 0
-        y: win.atTop ? win.settings.margin : 0
-        opacity: win.settings.opacity
+        first: win.first
+        x: win.atLeft ? win.cfg.margin : 0
+        y: win.atTop ? win.cfg.margin : 0
+        opacity: win.cfg.opacity
         scale: win.place.scale
         transformOrigin: Item.TopLeft
     }
@@ -68,8 +76,8 @@ Window {
     }
 
     function checkScreen() {
-        if (settings.screenName !== "" && targetScreen.name !== settings.screenName)
-            overlay.addNotice("monitor " + settings.screenName + " not found, using " + targetScreen.name)
+        if (cfg.screen && targetScreen.name !== cfg.screen)
+            overlay.addNotice(cfg.name + ": monitor " + cfg.screen + " not found, using " + targetScreen.name)
     }
 
     Component.onCompleted: {
@@ -84,5 +92,5 @@ Window {
         bindVisible()
     }
 
-    onPlaceChanged: if (place.capped) overlay.addNotice("scale capped to fit the screen")
+    onPlaceChanged: if (place.capped) overlay.addNotice(cfg.name + ": scale capped to fit the screen")
 }
