@@ -10,6 +10,7 @@ license.workspace = true
 kanata-client.workspace = true
 layout.workspace = true
 settings.workspace = true
+kbd.workspace = true
 serde_json.workspace = true
 wayland-client.workspace = true
 cxx.workspace = true

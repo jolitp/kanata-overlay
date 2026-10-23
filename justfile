@@ -17,9 +17,9 @@ default:
 build *args:
     cargo build --workspace {{args}}
 
-# Run the overlay against kanata on 127.0.0.1:$KANATA_PORT (default 7070)
+# Run the overlay against kanata on 127.0.0.1:$KANATA_PORT (default 7070), labelled from $KANATA_CFG
 run *args:
-    cargo run -p kanata-overlay -- --connect 127.0.0.1:{{kanata_port}} --layout {{layout}} {{args}}
+    cargo run -p kanata-overlay -- --connect 127.0.0.1:{{kanata_port}} --layout {{layout}} --config {{kanata_cfg}} {{args}}
 
 # Run a release build
 release:
