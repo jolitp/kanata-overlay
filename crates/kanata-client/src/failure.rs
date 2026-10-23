@@ -16,6 +16,9 @@ pub enum Failure {
         port: u16,
     },
     NoAnswer,
+    /// None of the config's devices is connected (Kanata 1.12 exits unless
+    /// `linux-continue-if-no-devs-found yes`). Retried, never given up on.
+    NoDevice,
     Exited {
         code: Option<i32>,
     },
@@ -28,7 +31,10 @@ impl Failure {
     pub fn retryable(&self) -> bool {
         matches!(
             self,
-            Failure::PortInUse { .. } | Failure::NoAnswer | Failure::Exited { .. }
+            Failure::PortInUse { .. }
+                | Failure::NoAnswer
+                | Failure::NoDevice
+                | Failure::Exited { .. }
         )
     }
 
@@ -42,6 +48,7 @@ impl Failure {
             Failure::Permissions => "Kanata may not read the keyboard or create its virtual keyboard: see README › Running Kanata without root".to_owned(),
             Failure::PortInUse { port } => format!("port {port} is in use"),
             Failure::NoAnswer => "Kanata did not answer within 10 s".to_owned(),
+            Failure::NoDevice => "waiting for its device (not connected)".to_owned(),
             Failure::Exited { code: Some(c) } => format!("Kanata stopped (code {c})"),
             Failure::Exited { code: None } => "Kanata stopped (killed by a signal)".to_owned(),
             Failure::GaveUp(_) => "Kanata keeps stopping; see the log".to_owned(),
@@ -82,6 +89,11 @@ pub(crate) fn classify_check(success: bool, output: &[String]) -> Option<Failure
 pub(crate) fn classify_exit(code: Option<i32>, output: &[String], port: u16) -> Failure {
     if output.iter().any(|l| l.contains("Permission denied")) {
         Failure::Permissions
+    } else if output
+        .iter()
+        .any(|l| l.contains("No keyboard devices were found"))
+    {
+        Failure::NoDevice
     } else if output
         .iter()
         .any(|l| l.contains("Address already in use") || l.contains("AddrInUse"))
@@ -172,6 +184,10 @@ mod tests {
             classify_exit(Some(3), &lines("[INFO] bye"), 7070),
             Failure::Exited { code: Some(3) }
         );
+        let missing = lines(
+            "[ERROR] No keyboard devices were found. Try:\n1. Run 'kanata --list' to see available devices\n2. Check permissions: sudo usermod -a -G input $USER",
+        );
+        assert_eq!(classify_exit(Some(1), &missing, 7070), Failure::NoDevice);
     }
 
     #[test]

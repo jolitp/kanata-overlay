@@ -195,6 +195,8 @@ fn key_text(k: &KeyName) -> String {
         "KEY_LEFTMETA" => "◆", "KEY_RIGHTMETA" => "◆›",
         "KEY_VOLUMEUP" => "🔊+", "KEY_VOLUMEDOWN" => "🔊−", "KEY_MUTE" => "🔇",
         "KEY_PLAYPAUSE" => "⏯",
+        "BTN_SIDE" => "🖱←", "BTN_EXTRA" => "🖱→", "BTN_LEFT" => "🖱L",
+        "BTN_RIGHT" => "🖱R", "BTN_MIDDLE" => "🖱M",
         "KEY_SEMICOLON" => ";", "KEY_COMMA" => ",", "KEY_DOT" => ".",
         "KEY_SLASH" => "/", "KEY_MINUS" => "-", "KEY_EQUAL" => "=",
         "KEY_LEFTBRACE" => "[", "KEY_RIGHTBRACE" => "]", "KEY_APOSTROPHE" => "'",
@@ -306,6 +308,15 @@ mod tests {
         let (_, w) = labels(&parse(cfg).unwrap(), "l");
         assert!(w.contains(&ConfigWarning::AliasLoop { name: "p".into() }));
         assert!(w.contains(&ConfigWarning::UnknownAlias { name: "u".into() }));
+    }
+
+    #[test]
+    fn mouse_buttons() {
+        let cfg = "(defsrc mbck mfwd mlft) (deflayer l 🖰4 mousebackward C-c)";
+        assert_eq!(text(cfg, "l", "mbck"), "🖱←");
+        assert_eq!(text(cfg, "l", "mfwd"), "🖱←");
+        assert_eq!(text(cfg, "l", "mlft"), "⌃C");
+        assert_eq!(text("(defsrc mfwd) (deflayer l _)", "l", "mfwd"), "🖱→");
     }
 
     #[test]

@@ -52,7 +52,24 @@ pub struct Config {
     pub layers: Vec<Layer>,
     pub aliases: HashMap<String, Action>,
     pub delegate_to_first_layer: bool,
+    /// Which input devices this config's Kanata grabs (`defcfg`).
+    pub devices: DeviceSelection,
     pub warnings: Vec<ConfigWarning>,
+}
+
+/// The devices a config limits Kanata to (Kanata 1.12 `defcfg`, Linux).
+/// All empty means Kanata auto-detects (every keyboard, and mice too if
+/// `mouse_buttons`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeviceSelection {
+    /// `linux-dev`: device paths.
+    pub paths: Vec<String>,
+    /// `linux-dev-names-include`: exact device names.
+    pub include: Vec<String>,
+    /// `linux-dev-names-exclude`: exact device names.
+    pub exclude: Vec<String>,
+    /// `defsrc` has mouse buttons, so auto-detection also grabs mice.
+    pub mouse_buttons: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

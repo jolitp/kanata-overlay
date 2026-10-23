@@ -15,13 +15,14 @@ fn main() {
             "qml/FallbackOverlay.qml",
             "qml/SettingsWindow.qml",
             "qml/LogWindow.qml",
+            "qml/DeviceView.qml",
         ]))
         .qt_module("Quick")
         .qt_module("DBus") // KGlobalAccel's headers use QtDBus types
         .files([
             "src/overlay_state.rs",
             "src/settings_state.rs",
-            "src/kanata_state.rs",
+            "src/device_state.rs",
             "src/global_shortcut.rs",
             "src/platform.rs",
         ])

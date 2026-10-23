@@ -5,15 +5,17 @@ import QtQuick
 // scale it.
 Item {
     id: board
+    // DeviceState: connection, layer, labels, Kanata session of this device.
+    required property var device
+    // OverlayState: global notices (shown on the first board only).
     required property var overlay
-    // KanataState: managed / attached / restarting … (may be null)
-    property var kanata: null
+    property bool first: false
     property real unit: 54 // pixels per keyboard unit (1u)
     readonly property real pad: 16
 
-    readonly property var layout: overlay.layoutJson.length > 0 ? JSON.parse(overlay.layoutJson) : ({ name: "", keys: [] })
+    readonly property var layout: device.layoutJson.length > 0 ? JSON.parse(device.layoutJson) : ({ name: "", keys: [] })
     // Labels for the active layer, keyed by canonical Kanata key name; {} without a config.
-    readonly property var labels: JSON.parse(overlay.labelsJson)
+    readonly property var labels: JSON.parse(device.labelsJson)
     readonly property bool hasConfig: Object.keys(labels).length > 0
     readonly property var bounds: {
         // Bounding box of all key corners, after KLE rotation around (rx, ry).
@@ -53,7 +55,7 @@ Item {
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: 10; height: 10; radius: 5
-            color: board.overlay.connected ? "#4caf50" : "#9e9e9e"
+            color: board.device.connected ? "#4caf50" : "#9e9e9e"
         }
         Text {
             id: layerName
@@ -61,7 +63,8 @@ Item {
             color: "#e8e8e8"
             font.pixelSize: 16
             font.bold: true
-            text: board.overlay.connected ? (board.overlay.currentLayer || "…") : "kanata not connected"
+            text: (board.device.name ? board.device.name + " · " : "")
+                  + (board.device.connected ? (board.device.currentLayer || "…") : "not connected")
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
@@ -70,11 +73,11 @@ Item {
             color: "#8a8a8a"
             font.pixelSize: 12
             // While a managed Kanata is down, its state says why; "connecting to …" adds nothing.
-            readonly property bool managedDown: !!board.kanata && board.kanata.mode === "managed"
-                                                && !board.overlay.connected
-            text: [board.kanata ? board.kanata.stateText : "",
-                   managedDown ? "" : board.overlay.status,
-                   board.overlay.notices]
+            readonly property bool managedDown: board.device.mode === "managed" && !board.device.connected
+            text: [board.device.stateText,
+                   managedDown ? "" : board.device.status,
+                   board.device.notices,
+                   board.first ? board.overlay.notices : ""]
                   .filter(s => s.length > 0).join(" · ")
         }
     }

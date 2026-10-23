@@ -3,7 +3,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use crate::{Edge, Field, MARGIN_RANGE, OPACITY_RANGE, SCALE_RANGE, Settings, in_range};
+use crate::{Appearance, Edge, Field, MARGIN_RANGE, OPACITY_RANGE, SCALE_RANGE, in_range};
 
 /// Settings given on the command line. `None` means "use the file's value".
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -80,10 +80,9 @@ impl Overrides {
         Ok(out)
     }
 
-    /// The file's settings with these overrides applied.
-    pub fn effective(&self, file: &Settings) -> Settings {
-        Settings {
-            version: file.version,
+    /// A board's appearance with these overrides applied.
+    pub fn effective(&self, file: &Appearance) -> Appearance {
+        Appearance {
             edge: self.edge.unwrap_or(file.edge),
             margin: self.margin.unwrap_or(file.margin),
             opacity: self.opacity.unwrap_or(file.opacity),
@@ -191,9 +190,9 @@ mod tests {
 
     #[test]
     fn overrides_win_and_can_be_cleared() {
-        let file = Settings {
+        let file = Appearance {
             opacity: 50,
-            ..Settings::default()
+            ..Appearance::default()
         };
         let mut o = parse(&["--opacity", "100", "--edge", "left"]).unwrap();
         let eff = o.effective(&file);

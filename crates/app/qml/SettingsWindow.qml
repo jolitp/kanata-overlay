@@ -1,17 +1,21 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 
-// An ordinary window for the overlay settings. Every change shows on the
-// overlay at once (live preview) and is saved when committed.
+// An ordinary window for the overlay settings: the device list, and for the
+// selected device its files, address, placement and Kanata (feature 004, R8).
+// Every change shows on the boards at once (live preview) and is saved when
+// committed.
 ApplicationWindow {
     id: win
     required property var settings
     required property var overlay
-    required property var kanata
+    /// Device id → DeviceState (from Main.qml).
+    property var deviceStates: ({})
 
     title: qsTr("Kanata Overlay Settings")
-    width: 420
+    width: 520
     height: form.implicitHeight + 32
     visible: false
 
@@ -28,27 +32,80 @@ ApplicationWindow {
     readonly property var monitors: [{ value: "", text: qsTr("Primary") }].concat(
         Array.from(Qt.application.screens, s => ({ value: s.name, text: s.name })))
 
+    // The device list and the selected device, re-read on every change.
+    readonly property var ids: { void settings.revision; return JSON.parse(settings.deviceIds || "[]") }
+    readonly property var deviceList: { void settings.revision; return ids.map(id => JSON.parse(settings.device(id))) }
+    property string selectedId: ""
+    readonly property var cfg: {
+        void settings.revision
+        return selectedId ? JSON.parse(settings.device(selectedId)) : ({})
+    }
+    readonly property var kanata: deviceStates[selectedId] || null
+    // Another device at the same position on the same monitor (spec edge case).
+    readonly property string overlapping: {
+        const other = deviceList.find(d => d.id !== selectedId && d.edge === cfg.edge && d.screen === cfg.screen)
+        return other ? other.name : ""
+    }
+
     function open() {
+        if (!ids.includes(selectedId))
+            selectedId = ids.length > 0 ? ids[0] : ""
         show()
         raise()
         requestActivate()
     }
 
-    // Load the current values into the controls each time the window opens.
-    function refresh() {
-        edgeBox.currentIndex = edgeBox.indexOfValue(settings.edge)
-        marginBox.value = settings.margin
-        opacitySlider.value = Math.round(settings.opacity * 100)
-        scaleSlider.value = settings.scale
-        monitorBox.currentIndex = Math.max(0, monitorBox.indexOfValue(settings.screenName))
+    function update(field, value) {
+        if (selectedId)
+            settings.updateDevice(selectedId, field, String(value))
     }
 
+    // Load the selected device's values into the controls.
+    // Reads the device itself: from onSelectedIdChanged, the cfg binding may
+    // not have caught up yet and still hold the previous device.
+    function refresh() {
+        const cfg = selectedId ? JSON.parse(settings.device(selectedId)) : ({})
+        deviceBox.currentIndex = Math.max(0, ids.indexOf(selectedId))
+        nameField.text = cfg.name || ""
+        configField.text = cfg.config || ""
+        layoutField.text = cfg.layout || ""
+        addressField.text = cfg.customAddress || ""
+        addressField.placeholderText = cfg.address || ""
+        edgeBox.currentIndex = edgeBox.indexOfValue(cfg.edge)
+        marginBox.value = cfg.margin || 0
+        opacitySlider.value = Math.round((cfg.opacity || 0) * 100)
+        scaleSlider.value = cfg.scale || 100
+        monitorBox.currentIndex = Math.max(0, monitorBox.indexOfValue(cfg.screen))
+    }
+
+    onSelectedIdChanged: refresh()
     onVisibleChanged: {
         if (visible)
             refresh()
         overlay.setPreviewing(visible)
     }
     onClosing: settings.save()
+
+    // Opens in the folder of the current file, if there is one.
+    function browse(field, filters) {
+        fileDialog.field = field
+        fileDialog.nameFilters = filters
+        const current = win.cfg[field] || ""
+        if (current.includes("/"))
+            fileDialog.currentFolder = "file://" + current.substring(0, current.lastIndexOf("/"))
+        fileDialog.open()
+    }
+
+    FileDialog {
+        id: fileDialog
+        property string field
+        onAccepted: {
+            const path = decodeURIComponent(selectedFile.toString().replace(/^file:\/\//, ""))
+            win.update(field, path)
+            win.settings.save()
+            win.refresh()
+        }
+    }
 
     GridLayout {
         id: form
@@ -58,16 +115,90 @@ ApplicationWindow {
         rowSpacing: 10
         columnSpacing: 12
 
-        Label { text: qsTr("Position") }
-        ComboBox {
-            id: edgeBox
+        Label { text: qsTr("Device") }
+        RowLayout {
+            ComboBox {
+                id: deviceBox
+                Layout.fillWidth: true
+                model: win.deviceList
+                // The list is rebuilt on every settings change, which puts the
+                // box back on its first entry: reselect the device being edited.
+                onModelChanged: Qt.callLater(() => currentIndex = Math.max(0, win.ids.indexOf(win.selectedId)))
+                textRole: "name"
+                valueRole: "id"
+                // By index: currentValue can still hold the previous entry here.
+                onActivated: index => win.selectedId = win.ids[index]
+            }
+            Button {
+                text: qsTr("Add")
+                onClicked: {
+                    win.selectedId = win.settings.addDevice(qsTr("New device"))
+                    win.refresh()
+                }
+            }
+            Button {
+                text: qsTr("Remove")
+                enabled: win.ids.length > 0
+                onClicked: removeDialog.open()
+            }
+        }
+
+        Label { text: qsTr("Name") }
+        TextField {
+            id: nameField
             Layout.fillWidth: true
-            model: win.edges
-            textRole: "text"
-            valueRole: "value"
-            onActivated: {
-                win.settings.updateEdge(currentValue)
-                win.settings.save()
+            onEditingFinished: { win.update("name", text); win.settings.save() }
+        }
+
+        Label { text: qsTr("Kanata config") }
+        RowLayout {
+            TextField {
+                id: configField
+                Layout.fillWidth: true
+                placeholderText: qsTr("none: printed legends only")
+                onEditingFinished: { win.update("config", text); win.settings.save() }
+            }
+            Button {
+                text: qsTr("Browse…")
+                onClicked: win.browse("config", [qsTr("Kanata config (*.kbd)"), qsTr("All files (*)")])
+            }
+        }
+
+        Label { text: qsTr("Layout") }
+        RowLayout {
+            TextField {
+                id: layoutField
+                Layout.fillWidth: true
+                placeholderText: qsTr("none: a grid of the config's keys")
+                onEditingFinished: { win.update("layout", text); win.settings.save() }
+            }
+            Button {
+                text: qsTr("Browse…")
+                onClicked: win.browse("layout", [qsTr("Layouts (*.json)"), qsTr("All files (*)")])
+            }
+        }
+
+        Label { text: qsTr("Address") }
+        TextField {
+            id: addressField
+            Layout.fillWidth: true
+            onEditingFinished: { win.update("address", text); win.settings.save() }
+        }
+
+        Label { text: qsTr("Position") }
+        RowLayout {
+            ComboBox {
+                id: edgeBox
+                Layout.fillWidth: true
+                model: win.edges
+                textRole: "text"
+                valueRole: "value"
+                onActivated: { win.update("edge", currentValue); win.settings.save() }
+            }
+            Label {
+                visible: win.overlapping.length > 0
+                color: palette.placeholderText
+                text: qsTr("overlaps %1").arg(win.overlapping)
             }
         }
 
@@ -78,10 +209,7 @@ ApplicationWindow {
             from: 0
             to: 500
             editable: true
-            onValueModified: {
-                win.settings.updateMargin(value)
-                win.settings.save()
-            }
+            onValueModified: { win.update("margin", value); win.settings.save() }
         }
 
         Label { text: qsTr("Opacity") }
@@ -92,7 +220,7 @@ ApplicationWindow {
                 from: 10
                 to: 100
                 stepSize: 1
-                onMoved: win.settings.updateOpacityPercent(value)
+                onMoved: win.update("opacity", value)
                 onPressedChanged: if (!pressed) win.settings.save()
             }
             Label { text: Math.round(opacitySlider.value) + "%" }
@@ -106,7 +234,7 @@ ApplicationWindow {
                 from: 50
                 to: 300
                 stepSize: 5
-                onMoved: win.settings.updateScalePercent(value)
+                onMoved: win.update("scale", value)
                 onPressedChanged: if (!pressed) win.settings.save()
             }
             Label { text: Math.round(scaleSlider.value) + "%" }
@@ -119,10 +247,7 @@ ApplicationWindow {
             model: win.monitors
             textRole: "text"
             valueRole: "value"
-            onActivated: {
-                win.settings.updateScreenName(currentValue)
-                win.settings.save()
-            }
+            onActivated: { win.update("screen", currentValue); win.settings.save() }
         }
 
         Label { text: qsTr("Kanata") }
@@ -130,23 +255,23 @@ ApplicationWindow {
             Label {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
-                text: win.kanata.mode === "none" ? qsTr("not managed")
+                text: !win.kanata ? "" : win.kanata.mode === "none" ? qsTr("not managed")
                       : win.kanata.mode + (win.kanata.stateText && win.kanata.stateText !== win.kanata.mode
                                            ? " · " + win.kanata.stateText : "")
             }
             Button {
                 text: qsTr("Restart")
-                visible: win.kanata.canRestart
+                visible: !!win.kanata && win.kanata.canRestart
                 onClicked: win.kanata.restart()
             }
             Button {
                 text: qsTr("Start Kanata")
-                visible: win.kanata.canStart
+                visible: !!win.kanata && win.kanata.canStart
                 onClicked: win.kanata.startManaged()
             }
             Button {
                 text: qsTr("Show log")
-                visible: win.kanata.mode === "managed"
+                visible: !!win.kanata && win.kanata.mode === "managed"
                 onClicked: { logWindow.show(); logWindow.raise() }
             }
         }
@@ -163,9 +288,11 @@ ApplicationWindow {
             visible: text.length > 0
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
-            text: [win.kanata.mode === "managed" && !win.overlay.connected ? win.kanata.stateText : "",
-                   win.overlay.notices.split(" · ").join("\n")]
-                  .filter(s => s.length > 0).join("\n")
+            text: !win.kanata ? "" : [
+                    win.kanata.mode === "managed" && !win.kanata.connected ? win.kanata.stateText : "",
+                    win.kanata.notices.split(" · ").join("\n"),
+                    win.overlay.notices.split(" · ").join("\n")
+                ].filter(s => s.length > 0).join("\n")
         }
 
         Item { Layout.columnSpan: 2; Layout.fillWidth: true; implicitHeight: 4 }
@@ -182,6 +309,18 @@ ApplicationWindow {
             wrapMode: Text.Wrap
             color: palette.placeholderText
             text: qsTr("Saved to %1").arg(win.settings.path || qsTr("(nowhere: no config directory)"))
+        }
+    }
+
+    Dialog {
+        id: removeDialog
+        anchors.centerIn: parent
+        title: qsTr("Remove %1?").arg(win.cfg.name || "")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        Label { text: qsTr("Its board disappears and a Kanata it started is stopped.") }
+        onAccepted: {
+            win.settings.removeDevice(win.selectedId)
+            win.selectedId = win.ids.length > 0 ? win.ids[0] : ""
         }
     }
 

@@ -32,6 +32,10 @@ pub(crate) fn read(forms: &[SExpr]) -> Result<Config, ConfigError> {
     let mut warnings = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
     let mut delegate_to_first_layer = false;
+    let mut devices = crate::DeviceSelection {
+        mouse_buttons: source.iter().any(|k| k.canonical.starts_with("BTN_")),
+        ..Default::default()
+    };
 
     for form in forms {
         let Some(list) = items(form) else { continue };
@@ -64,10 +68,15 @@ pub(crate) fn read(forms: &[SExpr]) -> Result<Config, ConfigError> {
             }
             "defcfg" => {
                 for pair in list[1..].chunks(2) {
-                    if let [key, value] = pair
-                        && key.atom() == Some("delegate-to-first-layer")
-                    {
-                        delegate_to_first_layer = matches!(value.atom(), Some("yes" | "true"));
+                    let [key, value] = pair else { continue };
+                    match key.atom() {
+                        Some("delegate-to-first-layer") => {
+                            delegate_to_first_layer = matches!(value.atom(), Some("yes" | "true"));
+                        }
+                        Some("linux-dev") => devices.paths = device_paths(value),
+                        Some("linux-dev-names-include") => devices.include = names(value),
+                        Some("linux-dev-names-exclude") => devices.exclude = names(value),
+                        _ => {}
                     }
                 }
             }
@@ -89,8 +98,48 @@ pub(crate) fn read(forms: &[SExpr]) -> Result<Config, ConfigError> {
         layers,
         aliases,
         delegate_to_first_layer,
+        devices,
         warnings,
     })
+}
+
+/// `linux-dev a:b` (with `\:` escaping a colon), or a list, taken literally.
+fn device_paths(value: &SExpr) -> Vec<String> {
+    match value {
+        SExpr::List(items) => items
+            .iter()
+            .filter_map(SExpr::atom)
+            .map(str::to_owned)
+            .collect(),
+        SExpr::Atom(a) => {
+            let mut out = vec![String::new()];
+            let mut chars = a.chars();
+            while let Some(c) = chars.next() {
+                match c {
+                    '\\' => {
+                        if let Some(next) = chars.next() {
+                            out.last_mut().unwrap().push(next);
+                        }
+                    }
+                    ':' => out.push(String::new()),
+                    c => out.last_mut().unwrap().push(c),
+                }
+            }
+            out.into_iter().filter(|p| !p.is_empty()).collect()
+        }
+    }
+}
+
+/// A list of names (a single atom is a one-name list).
+fn names(value: &SExpr) -> Vec<String> {
+    match value {
+        SExpr::List(items) => items
+            .iter()
+            .filter_map(SExpr::atom)
+            .map(str::to_owned)
+            .collect(),
+        SExpr::Atom(a) => vec![a.clone()],
+    }
 }
 
 /// A non-empty list form.
@@ -223,6 +272,39 @@ mod tests {
                 forms: vec!["include".into(), "deftemplate".into()]
             }]
         );
+    }
+
+    #[test]
+    fn reads_device_selection() {
+        let devices = |cfg: &str| {
+            parse(&format!("{cfg} {SRC} (deflayer l a b c)"))
+                .unwrap()
+                .devices
+        };
+        assert_eq!(
+            devices("(defcfg linux-dev /dev/input/a:/dev/input/b)").paths,
+            ["/dev/input/a", "/dev/input/b"]
+        );
+        assert_eq!(
+            devices(r"(defcfg linux-dev /dev/input/by-id/x\:y)").paths,
+            ["/dev/input/by-id/x:y"]
+        );
+        assert_eq!(
+            devices(r#"(defcfg linux-dev (/dev/input/p:q "/dev/input/with space"))"#).paths,
+            ["/dev/input/p:q", "/dev/input/with space"]
+        );
+        let d = devices(
+            r#"(defcfg linux-dev-names-include ("DYGMA DEFY Keyboard" "X") linux-dev-names-exclude ("Y"))"#,
+        );
+        assert_eq!(d.include, ["DYGMA DEFY Keyboard", "X"]);
+        assert_eq!(d.exclude, ["Y"]);
+        assert!(!d.mouse_buttons);
+        assert_eq!(devices(""), crate::DeviceSelection::default());
+
+        let mouse = parse("(defsrc ret mbck mfwd) (deflayer l a b c)")
+            .unwrap()
+            .devices;
+        assert!(mouse.mouse_buttons);
     }
 
     #[test]

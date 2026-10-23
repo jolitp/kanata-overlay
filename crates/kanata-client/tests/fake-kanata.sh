@@ -5,6 +5,7 @@
 #   FAKE_START=permission    fails like a user without input/uinput access
 #   FAKE_START=never-answer  runs but never opens its TCP port
 #   FAKE_START=no-keyboard   logs "no keyboard devices found" and waits
+#   FAKE_START=no-device     exits like Kanata when none of its devices exist
 #   FAKE_CRASH_AFTER=S       exits with code 3 after S seconds
 case " $* " in
 *" --check "*)
@@ -19,6 +20,11 @@ case " $* " in
 esac
 
 case "$FAKE_START" in
+no-device)
+    echo "[ERROR] No keyboard devices were found. Try:" >&2
+    echo "1. Run 'kanata --list' to see available devices" >&2
+    exit 1
+    ;;
 permission)
     echo "[ERROR] failed to open keyboard device(s): Permission denied (os error 13)" >&2
     exit 1

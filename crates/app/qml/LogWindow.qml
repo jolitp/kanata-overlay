@@ -42,7 +42,7 @@ ApplicationWindow {
             color: palette.text
             selectionColor: palette.highlight
             selectedTextColor: palette.highlightedText
-            text: win.kanata.logText
+            text: win.kanata ? win.kanata.logText : ""
         }
     }
 }
