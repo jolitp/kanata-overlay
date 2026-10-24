@@ -431,6 +431,7 @@ dependencies = [
 name = "layout"
 version = "0.1.0"
 dependencies = [
+ "kbd",
  "kle-serial",
  "serde",
  "serde_json",

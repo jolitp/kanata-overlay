@@ -14,6 +14,7 @@
 
 mod device_state;
 mod global_shortcut;
+mod layout_editor;
 mod overlay_state;
 mod platform;
 mod settings_state;

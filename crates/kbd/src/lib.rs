@@ -240,9 +240,33 @@ pub fn canonical(name: &str) -> String {
         .unwrap_or_else(|_| name.to_owned())
 }
 
+/// Every key name Kanata accepts, with its canonical key (`("ret", "KEY_ENTER")`).
+pub fn key_names() -> impl Iterator<Item = (&'static str, &'static str)> {
+    key_names::KEY_ALIASES.iter().copied()
+}
+
+/// Whether Kanata accepts `name` as a key name.
+pub fn is_key_name(name: &str) -> bool {
+    key_names::KEY_ALIASES
+        .binary_search_by(|(alias, _)| alias.as_bytes().cmp(name.as_bytes()))
+        .is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_name_table() {
+        for name in ["caps", "ret", "f13", "mbck", "lsft", ";"] {
+            assert!(is_key_name(name), "{name}");
+        }
+        for name in ["nonsense", "", "Caps "] {
+            assert!(!is_key_name(name), "{name}");
+        }
+        assert_eq!(key_names().count(), key_names::KEY_ALIASES.len());
+        assert!(key_names().any(|(n, c)| n == "ret" && c == "KEY_ENTER"));
+    }
 
     #[test]
     fn canonical_names() {

@@ -72,6 +72,15 @@ pub fn default_path() -> Option<PathBuf> {
     )
 }
 
+/// Where the layout editor saves new layouts: `layouts/` next to the settings
+/// file in use (feature 005, research R7).
+pub fn layouts_dir(settings_path: &Path) -> PathBuf {
+    settings_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("layouts")
+}
+
 fn path_from(xdg_config_home: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
     let base = match xdg_config_home.filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
@@ -539,5 +548,13 @@ mod tests {
             ))
         );
         assert_eq!(path_from(None, None), None);
+    }
+
+    #[test]
+    fn layouts_folder_is_next_to_the_settings_file() {
+        assert_eq!(
+            layouts_dir(Path::new("/c/kanata-overlay/settings.json")),
+            PathBuf::from("/c/kanata-overlay/layouts")
+        );
     }
 }

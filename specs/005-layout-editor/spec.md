@@ -136,6 +136,7 @@ saved file.
 - **FR-016**: Users MUST be asked to save, discard or cancel when closing the editor or switching device with unsaved changes.
 - **FR-017**: A failed save MUST be reported with its reason, keep the edits in the editor, and leave the device's previous layout in use.
 - **FR-018**: The editor MUST never change the device's Kanata config.
+- **FR-020** *(added 2026-10-23, user request)*: Users MUST be able to put a reference image under the keys in the editor, place it (position, width, opacity; by fields, Alt+drag and Alt+wheel) and remove it. It is saved with the layout, stays aligned with the keys when the layout is moved to the origin on save, is undoable, and is never shown on the overlay's boards.
 - **FR-019**: The editor MUST NOT read pressed keys (constitution VI; press-to-bind comes with roadmap item 6).
 
 ### Key Entities

@@ -23,7 +23,7 @@ mod placement;
 
 pub use cli::{CliError, Overrides};
 pub use devices::{default_address, slug, typed_path};
-pub use file::{LoadOutcome, SettingsWarning, default_path, load, save};
+pub use file::{LoadOutcome, SettingsWarning, default_path, layouts_dir, load, save};
 pub use placement::{Placement, place};
 
 /// Current settings file version (2: a list of devices).

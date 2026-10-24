@@ -13,6 +13,13 @@ Unchanged on disk (format version 1). See `crates/layout/src/lib.rs`.
 | `kanata` | Kanata key name, or absent (unbound) | must pass `kbd::is_key_name` |
 | `legend` | printed text, may be empty | free text; longer input is cut to 32 characters |
 
+### Background (new, optional on Layout)
+
+The editor's reference image: `path` (absolute), `x`, `y` (top-left, units), `width`
+(units; height from the image's aspect ratio), `opacity`. Rules: width 0.5–200,
+opacity 0.05–1; omitted from the file when absent (older files load unchanged);
+shifted with the keys by `normalise_origin`; boards ignore it (FR-020).
+
 ## Editor (new, `layout::edit`)
 
 One editing session for one device's layout.

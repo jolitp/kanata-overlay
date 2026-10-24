@@ -43,6 +43,28 @@ QtObject {
             settings: settingsState
             overlay: overlayState
             deviceStates: root.deviceStates
+            layoutEditor: layoutEditorWindow
+        },
+        // One layout editor for all devices (feature 005).
+        LayoutEditor {
+            id: layoutEditor
+            // A new file becomes the device's layout; every board showing that
+            // file rereads it (two devices may share one).
+            onSaved: (deviceId, path, isNew) => {
+                if (isNew) {
+                    settingsState.updateDevice(deviceId, "layout", path)
+                    settingsState.save()
+                    settingsWindow.refresh()
+                }
+                for (const id in root.deviceStates)
+                    root.deviceStates[id].reloadLayout(path)
+            }
+        },
+        LayoutEditorWindow {
+            id: layoutEditorWindow
+            editor: layoutEditor
+            settings: settingsState
+            deviceStates: root.deviceStates
         },
         // Configs can be edited and devices plugged in at any time: re-run the
         // device check now and then (cheap: a few small files and /proc).

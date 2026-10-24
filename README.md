@@ -22,7 +22,8 @@ physical key ──kanata name──▶ index in defsrc ──▶ action in the 
 
 Layouts can be imported from [keyboard-layout-editor.com](https://www.keyboard-layout-editor.com/)
 JSON; obvious legends (`Q`, `Esc`, `Caps Lock`…) are bound automatically and unbound
-keys are outlined in orange.
+keys are outlined in orange. The [layout editor](#layout-editor) binds the rest and
+shapes a board to match the device.
 
 ## Quick start
 
@@ -150,6 +151,39 @@ configs would grab the same device, or a config doesn't limit itself (and would 
 every keyboard), the board says so, and the later Kanata of an overlapping pair is not
 started.
 
+### Layout editor
+
+Settings → select a device → **Edit layout…** opens the device's board in an editor
+window. It starts from the board you see: the layout file, or the grid of the config's
+keys.
+
+- **Bind keys**: select a key and pick its Kanata key in **Key**. The config's keys that
+  aren't on the layout yet come first; every other Kanata name is searchable (`ret`,
+  `enter`, `⏎`… all find Enter). Unknown names are refused.
+- **Marks**: unbound keys have an orange border and a "?", keys bound to a name the
+  config doesn't list are yellow ("∉"), duplicate bindings show "2×", overlapping keys
+  are tinted red. The status line counts them.
+- **Arrange**: click to select (Shift/Ctrl+click adds), drag on the background for a
+  box, drag keys to move, drag the edge handles to resize and the round handle to rotate. The mouse wheel zooms around the pointer; right- or middle-drag pans
+  (several keys rotate around their centre). Exact values go in X, Y, Width, Height and
+  Rotation. Positions snap to ¼ key and angles to 5° unless **Snap** is off. Arrows
+  nudge (Shift: 1u); Ctrl+D duplicates, Delete deletes, Ctrl+Z / Ctrl+Shift+Z undo
+  and redo.
+- **Reference image**: **Choose image…** puts a picture under the keys (for example a
+  screenshot of your keyboard in its vendor's configurator, such as Bazecor). Alt+drag
+  moves it, Alt+wheel scales it, and X, Y, Width and Opacity place it exactly. Match one
+  key in the picture to one key on the grid, then drag the keys over the picture. It is
+  saved with the layout and only shown in the editor.
+- **Preview**: every change shows on the device's board; closing without saving puts
+  the saved layout back.
+- **Save** (Ctrl+S): a layout already in the app's format is updated in place. Anything
+  else (no layout, the grid, a keyboard-layout-editor export) is saved as a new file
+  `layouts/<device name>.json` next to `settings.json`, and the device switches to it.
+  Exports are never overwritten, the device's Kanata isn't restarted, and if the file
+  changed on disk meanwhile you choose to overwrite or reload.
+
+The editor never touches the Kanata config and reads no key presses.
+
 ## Running Kanata without root
 
 Kanata needs to read `/dev/input/event*` and write `/dev/uinput`. Grant that to your
@@ -220,7 +254,9 @@ Suggested order for the first Spec Kit features:
    already running; optional `systemd --user` mode.
 4. ~~**Several devices**~~ ✅ done in [`specs/004-multi-device`](specs/004-multi-device/spec.md):
    one Kanata and one board per device.
-5. **Layout editor**: bind unbound keys, move/resize/rotate keys, save layouts.
+5. ~~**Layout editor**~~ ✅ done in [`specs/005-layout-editor`](specs/005-layout-editor/spec.md):
+   bind unbound keys, move/resize/rotate/add/delete keys, save layouts (press-to-bind
+   comes with item 6).
 6. **Live key highlighting**: tap-hold events from the TCP protocol
    (`HoldActivated`/`TapActivated`), evdev on Kanata's output device, optional
    `--debug` output parsing.

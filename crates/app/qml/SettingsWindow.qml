@@ -13,6 +13,8 @@ ApplicationWindow {
     required property var overlay
     /// Device id → DeviceState (from Main.qml).
     property var deviceStates: ({})
+    /// The layout editor window (feature 005).
+    property var layoutEditor: null
 
     title: qsTr("Kanata Overlay Settings")
     width: 520
@@ -175,6 +177,14 @@ ApplicationWindow {
             Button {
                 text: qsTr("Browse…")
                 onClicked: win.browse("layout", [qsTr("Layouts (*.json)"), qsTr("All files (*)")])
+            }
+            Button {
+                text: qsTr("Edit layout…")
+                enabled: !!win.kanata && !!win.layoutEditor
+                onClicked: win.layoutEditor.whenSaved(() => {
+                    win.layoutEditor.endSession()
+                    win.layoutEditor.openDevice(win.selectedId)
+                })
             }
         }
 

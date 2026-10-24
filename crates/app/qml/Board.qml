@@ -19,18 +19,25 @@ Item {
     readonly property bool hasConfig: Object.keys(labels).length > 0
     readonly property var bounds: {
         // Bounding box of all key corners, after KLE rotation around (rx, ry).
-        let w = 0, h = 0
+        // Keys may sit left of or above 0 while the layout editor previews.
+        if (layout.keys.length === 0)
+            return { x: 0, y: 0, w: 0, h: 0 }
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
         for (const k of layout.keys) {
             const a = (k.rotation || 0) * Math.PI / 180
             const rx = k.rx || 0, ry = k.ry || 0
             for (const [cx, cy] of [[k.x, k.y], [k.x + k.width, k.y],
                                     [k.x, k.y + k.height], [k.x + k.width, k.y + k.height]]) {
                 const dx = cx - rx, dy = cy - ry
-                w = Math.max(w, rx + dx * Math.cos(a) - dy * Math.sin(a))
-                h = Math.max(h, ry + dx * Math.sin(a) + dy * Math.cos(a))
+                const px = rx + dx * Math.cos(a) - dy * Math.sin(a)
+                const py = ry + dx * Math.sin(a) + dy * Math.cos(a)
+                x0 = Math.min(x0, px); y0 = Math.min(y0, py)
+                x1 = Math.max(x1, px); y1 = Math.max(y1, py)
             }
         }
-        return { w: w, h: h }
+        // Saved layouts start at (0, 0); keep that origin unless keys go past it.
+        x0 = Math.min(x0, 0); y0 = Math.min(y0, 0)
+        return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
     }
 
     // Size at 100% scale.
@@ -83,8 +90,8 @@ Item {
     }
 
     Item {
-        x: board.pad
-        y: header.y + header.height + 8
+        x: board.pad - board.bounds.x * board.unit
+        y: header.y + header.height + 8 - board.bounds.y * board.unit
 
         Repeater {
             model: board.layout.keys

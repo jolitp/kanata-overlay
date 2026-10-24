@@ -67,9 +67,28 @@ pub mod qobject {
         fn start(self: Pin<&mut DeviceState>, device: &QString, check: &QString);
 
         /// The device's settings changed: restart its session if its config,
-        /// layout or address changed (FR-001a).
+        /// address or device check changed (FR-001a); a new layout alone is
+        /// just reloaded (feature 005, research R6).
         #[qinvokable]
         fn apply(self: Pin<&mut DeviceState>, device: &QString, check: &QString);
+
+        /// Show this layout (the layout editor's) instead of the saved one; no
+        /// file is touched (feature 005, FR-013).
+        #[qinvokable]
+        fn preview_layout(self: Pin<&mut DeviceState>, json: &QString);
+
+        /// Back to the saved layout (or the grid).
+        #[qinvokable]
+        fn end_preview(self: Pin<&mut DeviceState>);
+
+        /// Reread the layout if `path` is this device's layout file (a layout
+        /// shared by several devices was saved).
+        #[qinvokable]
+        fn reload_layout(self: Pin<&mut DeviceState>, path: &QString);
+
+        /// The loaded config's `defsrc` names as written, as a JSON array.
+        #[qinvokable]
+        fn config_keys_json(self: &DeviceState) -> QString;
 
         #[qinvokable]
         fn restart(self: Pin<&mut DeviceState>);
@@ -183,9 +202,18 @@ impl qobject::DeviceState {
         if let Some(name) = value.get("name").and_then(Value::as_str) {
             self.as_mut().set_name(QString::from(name));
         }
+        let setup = setup_of(&value);
+        let same_session = setup.config == self.rust().setup.config
+            && setup.address == self.rust().setup.address
+            && check.to_string() == self.rust().check;
+        if same_session && setup.layout != self.rust().setup.layout {
+            self.as_mut().rust_mut().setup.layout = setup.layout;
+            self.reload_current_layout();
+            return;
+        }
         // A new check result (a config or the device list changed) can add or
         // lift a block or a warning: start over like for a new setup.
-        if setup_of(&value) != self.rust().setup || check.to_string() != self.rust().check {
+        if !same_session {
             self.as_mut().shutdown();
             {
                 let mut rust = self.as_mut().rust_mut();
@@ -286,6 +314,45 @@ impl qobject::DeviceState {
                 }
             });
         });
+    }
+
+    fn preview_layout(self: Pin<&mut Self>, json: &QString) {
+        self.set_layout_json(QString::from(&with_canonical_names(&json.to_string())));
+    }
+
+    fn end_preview(self: Pin<&mut Self>) {
+        self.reload_current_layout();
+    }
+
+    fn reload_layout(self: Pin<&mut Self>, path: &QString) {
+        let path = PathBuf::from(path.to_string());
+        if self.rust().setup.layout.as_ref() == Some(&path) {
+            self.reload_current_layout();
+        }
+    }
+
+    fn config_keys_json(&self) -> QString {
+        let names: Vec<String> = self
+            .rust()
+            .config
+            .iter()
+            .flat_map(|c| &c.source)
+            .map(|k| k.written.clone())
+            .collect();
+        QString::from(&serde_json::to_string(&names).unwrap_or_default())
+    }
+
+    /// Reread the current setup's layout, replacing its notices.
+    fn reload_current_layout(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .rust_mut()
+            .notice_list
+            .retain(|n| !n.starts_with("layout: ") && !n.starts_with("no layout for "));
+        let joined = self.rust().notice_list.join(" · ");
+        self.as_mut().set_notices(QString::from(&joined));
+        let path = self.rust().setup.layout.clone();
+        let name = self.name().to_string();
+        self.load_layout(path.as_deref(), &name);
     }
 
     fn load_layout(mut self: Pin<&mut Self>, path: Option<&Path>, name: &str) {
@@ -540,7 +607,7 @@ fn port_of(address: &str) -> u16 {
 
 /// Add each key's canonical Kanata name (`kanataCanonical`), so QML can look
 /// up its label without knowing Kanata's key spellings.
-fn with_canonical_names(layout_json: &str) -> String {
+pub(crate) fn with_canonical_names(layout_json: &str) -> String {
     let Ok(mut value) = serde_json::from_str::<Value>(layout_json) else {
         return layout_json.to_owned();
     };

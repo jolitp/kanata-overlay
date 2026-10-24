@@ -16,6 +16,8 @@ fn main() {
             "qml/SettingsWindow.qml",
             "qml/LogWindow.qml",
             "qml/DeviceView.qml",
+            "qml/LayoutEditorWindow.qml",
+            "qml/EditorKey.qml",
         ]))
         .qt_module("Quick")
         .qt_module("DBus") // KGlobalAccel's headers use QtDBus types
@@ -23,6 +25,7 @@ fn main() {
             "src/overlay_state.rs",
             "src/settings_state.rs",
             "src/device_state.rs",
+            "src/layout_editor.rs",
             "src/global_shortcut.rs",
             "src/platform.rs",
         ])
