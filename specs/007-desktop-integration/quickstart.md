@@ -32,4 +32,62 @@ combination (ok, missing, needs-login; NixOS and not).
 
 ## Validation log
 
-*(filled in during implementation)*
+**Automated (2026-10-24)**: `just check` passes. New tests: tray `short_label` and
+`tooltip`; the `style` setting (missing, invalid with a warning, round trip); desktop
+and login entry contents, `Exec` quoting, write-only-when-changed, the launcher script;
+the single-instance protocol (one socket per settings file, a stale socket replaced, a
+second claim handing over); `permissions::report` (all ok, uinput missing on NixOS and
+not, groups needing a new login, input missing) and `gather` on this machine.
+
+**Agent (2026-10-24)**, fake Kanata, scratch settings and scratch `XDG_DATA_HOME` /
+`XDG_CONFIG_HOME`:
+- §2.1 tray: two items `kanata-overlay-a` / `-b` registered with Plasma's
+  StatusNotifierWatcher, tooltips "Alpha · base · managed"; a layer change on Alpha
+  changed only Alpha's tooltip ("navigation · managed"). The icon pixmap read back over
+  D-Bus: 32×32, a blue rounded square with "Base" in white, transparent corners.
+  `Activate` toggled the boards; the menu (Show/Hide, Settings… (Beta), Restart Kanata ›
+  Alpha/Beta, Quit) clicked over DBusMenu: Settings… opened on Beta, Quit quit and left
+  no Kanata. In a D-Bus session without a tray: "no system tray: use the shortcuts".
+- §2.2 compact: 680×298 → 170×58 (under 5 % of the area, SC-002), the pill "● Alpha ·
+  base"; no presses read while compact (`watched` false, nothing lit with `FAKE_KEYS`);
+  back to full at 680×298.
+- §2.3 single instance: a second start with the same settings printed "already
+  running; opened its settings", exited 0, and the first opened its settings.
+- §2.4 desktop entry: the entry, the icon and `launch.sh` written; the entry's `Exec`
+  is `launch.sh` for the dev build. `launch.sh` started the overlay from `env -i` (only
+  HOME, USER, XDG_RUNTIME_DIR, WAYLAND_DISPLAY, DBUS_SESSION_BUS_ADDRESS, a system PATH)
+  with its tray icon and no QML/plugin errors. `nix build` gave a wrapped package that
+  started the same way; its entry's `Exec` is the store wrapper and no `launch.sh` is
+  written.
+- §2.5 Start at login: the autostart entry appeared and disappeared with the toggle.
+- §2.6 permissions: this machine reports ready (input devices readable, virtual
+  keyboard writable, NixOS).
+
+**User, first look (2026-10-24)**: clicking one tray icon hid both boards. Changed:
+a click toggles that device's board only; the menu has Show/Hide <device> and Show/Hide
+all boards; the shortcut and "all boards" toggle every board and showing all brings back
+boards hidden on their own (`OverlayState.hiddenJson`, `toggleDevice`). Checked over
+D-Bus: Alpha's icon hid only Alpha and brought it back; "all boards" hid both; Beta's
+icon then showed only Beta.
+
+**Compact board in the tray menu** (user request, 2026-10-24): a "Compact board" tick
+on each icon sets that device's board style (saved, same setting as the settings
+window). Checked over D-Bus: ticking shrank Alpha's board to 180×58 and the tick showed;
+unticking restored 370×136; the settings file held "full" again.
+
+**User (2026-10-24), T027 so far**: hiding one board from its icon works; the
+compact board works (settings and tray menu); the settings window shows "✓ Kanata can
+run without root" (§3.4, passed); the window's title bar shows the app icon, i.e. the
+desktop entry is found. Kanata Overlay is listed in the application menu; launching
+it while it runs opens the running overlay's settings (§3.3, single instance from the
+menu). Passed. Pending: Start at login after a real login (the user will test it later).
+
+**Layer colours** (user request, 2026-10-24): each layer name maps to one of 8 palette
+colours (FNV-1a, tested: stable, typical names spread over several colours); the tray
+icon is drawn in it (grey when not connected) and the board's state dot uses it.
+Checked over D-Bus: Alpha's icon was blue (`#3b82f6`) in "base" and amber (`#d97706`)
+after switching to "nav".
+
+**Not checked by the agent**: the "App info not found" warning going away needs the
+real `~/.local/share` (the portal reads the user's real data folders); the tray as
+drawn in the panel (checked through D-Bus instead); logging in with Start at login on.

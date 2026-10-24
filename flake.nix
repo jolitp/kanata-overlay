@@ -13,20 +13,68 @@
         "aarch64-linux"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # cxx-qt locates Qt through a single qmake prefix, but Nix puts every Qt
+      # module in its own store path. qt6.env merges them into one prefix with
+      # a qmake (and qt.conf) that reports it.
+      qtEnvFor =
+        pkgs:
+        pkgs.qt6.env "kanata-overlay-qt" [
+          pkgs.qt6.qtdeclarative # QML / Qt Quick
+          pkgs.qt6.qtwayland # Wayland platform plugin
+          pkgs.qt6.qtsvg # SVG icons and key legends
+          pkgs.kdePackages.layer-shell-qt # Wayland layer-shell: always-on-top, click-through overlay
+        ];
     in
     {
+      # The installable app (feature 007, research R9): the binary wrapped with
+      # the Qt paths and Kanata, so it starts from the application menu and at
+      # login, outside the development shell.
+      packages = forAllSystems (
+        pkgs:
+        let
+          qtEnv = qtEnvFor pkgs;
+        in
+        {
+          default = pkgs.rustPlatform.buildRustPackage {
+            pname = "kanata-overlay";
+            version = "0.1.0";
+            src = self;
+            cargoLock.lockFile = ./Cargo.lock;
+            cargoBuildFlags = [
+              "-p"
+              "kanata-overlay"
+            ];
+            # The tests run in the development shell (`just check`).
+            doCheck = false;
+            nativeBuildInputs = [
+              pkgs.pkg-config
+              pkgs.cmake
+              pkgs.makeWrapper
+            ];
+            buildInputs = [
+              qtEnv
+              pkgs.libGL
+              pkgs.kdePackages.kglobalaccel
+            ];
+            QMAKE = "${qtEnv}/bin/qmake";
+            KF6_GLOBALACCEL_INCLUDE_DIR = "${pkgs.kdePackages.kglobalaccel.dev}/include/KF6/KGlobalAccel";
+            postInstall = ''
+              wrapProgram $out/bin/kanata-overlay \
+                --set QT_PLUGIN_PATH "${qtEnv}/${pkgs.qt6.qtbase.qtPluginPrefix}" \
+                --set QML_IMPORT_PATH "${qtEnv}/${pkgs.qt6.qtbase.qtQmlPrefix}" \
+                --set QML2_IMPORT_PATH "${qtEnv}/${pkgs.qt6.qtbase.qtQmlPrefix}" \
+                --prefix PATH : "${pkgs.kanata}/bin" \
+                --set KANATA_OVERLAY_WRAPPER "$out/bin/kanata-overlay"
+            '';
+            meta.mainProgram = "kanata-overlay";
+          };
+        }
+      );
+
       devShells = forAllSystems (
         pkgs:
         let
-          # cxx-qt locates Qt through a single qmake prefix, but Nix puts every Qt
-          # module in its own store path. qt6.env merges them into one prefix with
-          # a qmake (and qt.conf) that reports it.
-          qtEnv = pkgs.qt6.env "kanata-overlay-qt" [
-            pkgs.qt6.qtdeclarative # QML / Qt Quick
-            pkgs.qt6.qtwayland # Wayland platform plugin
-            pkgs.qt6.qtsvg # SVG icons and key legends
-            pkgs.kdePackages.layer-shell-qt # Wayland layer-shell: always-on-top, click-through overlay
-          ];
+          qtEnv = qtEnvFor pkgs;
         in
         {
           default = pkgs.mkShell {

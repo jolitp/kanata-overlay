@@ -175,6 +175,33 @@ impl Highlight {
     }
 }
 
+/// How a device's board looks (feature 007).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Style {
+    /// The keyboard with every key's action.
+    #[default]
+    Full,
+    /// Only the device name, its layer and the connection state.
+    Compact,
+}
+
+impl Style {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Style::Full => "full",
+            Style::Compact => "compact",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "full" => Some(Style::Full),
+            "compact" => Some(Style::Compact),
+            _ => None,
+        }
+    }
+}
+
 /// A device the overlay shows, with its own Kanata and board.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
@@ -190,6 +217,7 @@ pub struct Device {
     pub address: Option<String>,
     pub appearance: Appearance,
     pub highlight: Highlight,
+    pub style: Style,
 }
 
 /// The persisted settings: the device list.

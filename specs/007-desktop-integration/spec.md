@@ -45,7 +45,7 @@ icon and tooltip follow; use each menu entry.
 1. **Given** the overlay is running with two devices, **When** the panel is visible, **Then** there are two tray icons, each showing its device's active layer, with a tooltip "name · layer · state".
 2. **Given** a layer change on a device, **When** it happens, **Then** that device's icon and tooltip update within a second; the other icons don't change.
 3. **Given** the tray menu, **When** the user picks Show/Hide boards, Settings…, Restart <device>, or Quit, **Then** that happens (Restart only for devices whose Kanata the overlay manages; Quit stops managed Kanatas as today).
-4. **Given** a click on the icon itself, **When** it happens, **Then** the boards are shown or hidden (same as the show/hide shortcut).
+4. **Given** a click on a device's icon, **When** it happens, **Then** that device's board is shown or hidden; the other boards don't change. (Changed during validation, 2026-10-24: clicking one icon hid every board, which surprised the user.) If every board was hidden, the click shows just that one.
 5. **Given** a desktop without a system tray, **When** the overlay starts, **Then** it runs as today and says once that the tray isn't available.
 
 ---
@@ -130,7 +130,8 @@ check passes.
 
 - **FR-001**: The overlay MUST show one system tray icon per device while running, each with a tooltip of that device's name, layer and state; icons appear and disappear with their devices.
 - **FR-002**: The tray icon MUST show a short label of the active layer (at most 4 characters, shortened from the layer name; "–" when not connected), updated within 1 second of a layer change.
-- **FR-003**: Every icon's menu MUST offer: Show/Hide boards, Settings… (opened on that icon's device), Restart Kanata for each managed device, and Quit. Activating an icon MUST toggle the boards.
+- **FR-002a** *(added on request, 2026-10-24)*: Each layer MUST have a colour, chosen automatically and always the same for the same layer name (a fixed palette), used for its device's tray icon and the board's state dot; grey when not connected. Choosing colours is a later feature.
+- **FR-003**: Every icon's menu MUST offer: Show/Hide <its device>, Show/Hide all boards, Compact board (a tick for its device's board style, added on request 2026-10-24), Settings… (opened on that icon's device), Restart Kanata for each managed device, and Quit. Activating an icon MUST toggle its own device's board only; the global shortcut and "all boards" toggle every board, and showing all brings back boards hidden on their own.
 - **FR-004**: Without a system tray the overlay MUST keep working as today and tell the user once.
 - **FR-005**: Each device MUST have a board style setting, "full" (default) or "compact", changeable in the settings window without restarting Kanata.
 - **FR-006**: A compact board MUST show only the device name, its layer and the connection state, placed by the device's position, margin, scale, opacity and monitor; it MUST NOT read key presses (feature 006) while compact.

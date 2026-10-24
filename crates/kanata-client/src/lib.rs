@@ -16,6 +16,7 @@ pub mod input_devices;
 pub mod launcher;
 pub mod live;
 pub mod output_tap;
+pub mod permissions;
 mod probe;
 pub mod supervisor;
 

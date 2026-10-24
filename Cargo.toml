@@ -35,6 +35,10 @@ kbd = { path = "crates/kbd" }
 # Layer-shell probe (research R4).
 wayland-client = "0.31"
 
+# Tray icons per device without Qt Widgets (feature 007, research R1); async-io
+# is the backend zbus needs underneath the blocking API (no runtime of ours).
+ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
+
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
 

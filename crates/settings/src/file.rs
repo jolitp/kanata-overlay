@@ -16,7 +16,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{
     Appearance, Device, Field, Highlight, MARGIN_RANGE, OPACITY_RANGE, SCALE_RANGE, Settings,
-    VERSION, in_range,
+    Style, VERSION, in_range,
 };
 
 /// Something the user should know about the settings file.
@@ -162,6 +162,7 @@ pub(crate) fn parse(text: &str) -> LoadOutcome {
             address: None,
             appearance: parse_appearance(&object, "", &mut warnings),
             highlight: Highlight::All,
+            style: Style::Full,
         }],
         None => Vec::new(),
     };
@@ -220,6 +221,16 @@ fn parse_device(
             Highlight::All
         }),
     };
+    let style = match object.get("style") {
+        None | Some(Value::Null) => Style::Full,
+        Some(v) => v.as_str().and_then(Style::parse).unwrap_or_else(|| {
+            warnings.push(SettingsWarning::InvalidField {
+                field: format!("{prefix}style"),
+                reason: "not \"full\" or \"compact\"".to_owned(),
+            });
+            Style::Full
+        }),
+    };
     Ok(Device {
         appearance: parse_appearance(object, &prefix, warnings),
         id,
@@ -228,6 +239,7 @@ fn parse_device(
         layout: path("layout"),
         address,
         highlight,
+        style,
     })
 }
 
@@ -336,6 +348,7 @@ fn device_json(d: &Device) -> Value {
         "scale": d.appearance.scale,
         "screen": d.appearance.screen,
         "highlight": d.highlight.as_str(),
+        "style": d.style.as_str(),
     })
 }
 
@@ -383,6 +396,7 @@ mod tests {
             address: None,
             appearance,
             highlight: Highlight::All,
+            style: Style::Full,
         }
     }
 
@@ -412,6 +426,7 @@ mod tests {
                     address: Some("127.0.0.1:7171".into()),
                     layout: Some("/k/mouse.json".into()),
                     highlight: Highlight::NoTyping,
+                    style: Style::Compact,
                     ..device(
                         "mouse",
                         Appearance {
@@ -584,7 +599,7 @@ mod tests {
             r#"{"version": 2, "devices": [
                 {"id": "a", "name": "A"},
                 {"id": "b", "name": "B", "highlight": "off"},
-                {"id": "c", "name": "C", "highlight": "bogus"}]}"#,
+                {"id": "c", "name": "C", "highlight": "bogus", "style": "tiny"}]}"#,
         )
         .unwrap();
         let out = load(&file);
@@ -592,6 +607,9 @@ mod tests {
         assert_eq!(h, [Highlight::All, Highlight::Off, Highlight::All]);
         assert!(out.warnings.iter().any(|w| matches!(w,
             SettingsWarning::InvalidField { field, .. } if field == "devices[3].highlight")));
+        assert!(out.warnings.iter().any(|w| matches!(w,
+            SettingsWarning::InvalidField { field, .. } if field == "devices[3].style")));
+        assert!(out.settings.devices.iter().all(|d| d.style == Style::Full));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

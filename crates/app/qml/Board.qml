@@ -10,6 +10,8 @@ Item {
     // OverlayState: global notices (shown on the first board only).
     required property var overlay
     property bool first: false
+    /// Only the header: state dot, name and layer (feature 007).
+    property bool compact: false
     property real unit: 54 // pixels per keyboard unit (1u)
     readonly property real pad: 16
 
@@ -52,8 +54,9 @@ Item {
     }
 
     // Size at 100% scale.
-    readonly property size baseSize: Qt.size(Math.max(360, bounds.w * unit + 2 * pad),
-                                             bounds.h * unit + 2 * pad + header.height + 8)
+    readonly property size baseSize: compact
+        ? Qt.size(layerName.implicitWidth + 10 + header.spacing + 2 * pad, header.height + 16)
+        : Qt.size(Math.max(360, bounds.w * unit + 2 * pad), bounds.h * unit + 2 * pad + header.height + 8)
     width: baseSize.width
     height: baseSize.height
 
@@ -73,7 +76,8 @@ Item {
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: 10; height: 10; radius: 5
-            color: board.device.connected ? "#4caf50" : "#9e9e9e"
+            // The layer's colour, as on its tray icon; grey when not connected.
+            color: board.device.connected ? board.device.layerColor(board.device.currentLayer) : "#9e9e9e"
         }
         Text {
             id: layerName
@@ -85,6 +89,7 @@ Item {
                   + (board.device.connected ? (board.device.currentLayer || "…") : "not connected")
         }
         Text {
+            visible: !board.compact
             anchors.verticalCenter: parent.verticalCenter
             width: board.width - 2 * board.pad - layerName.width - 10 - 2 * header.spacing
             elide: Text.ElideRight
@@ -101,6 +106,7 @@ Item {
     }
 
     Item {
+        visible: !board.compact
         x: board.pad - board.bounds.x * board.unit
         y: header.y + header.height + 8 - board.bounds.y * board.unit
 

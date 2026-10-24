@@ -15,6 +15,9 @@ ApplicationWindow {
     property var deviceStates: ({})
     /// The layout editor window (feature 005).
     property var layoutEditor: null
+    /// DesktopState: Start at login and the permission check (feature 007).
+    property var desktop: null
+    readonly property var permissions: desktop && desktop.permissionsJson ? JSON.parse(desktop.permissionsJson) : null
 
     title: qsTr("Kanata Overlay Settings")
     width: 520
@@ -79,12 +82,16 @@ ApplicationWindow {
         scaleSlider.value = cfg.scale || 100
         monitorBox.currentIndex = Math.max(0, monitorBox.indexOfValue(cfg.screen))
         highlightBox.currentIndex = Math.max(0, highlightBox.indexOfValue(cfg.highlight || "all"))
+        styleBox.currentIndex = Math.max(0, styleBox.indexOfValue(cfg.style || "full"))
     }
 
     onSelectedIdChanged: refresh()
     onVisibleChanged: {
-        if (visible)
+        if (visible) {
             refresh()
+            if (desktop)
+                desktop.checkPermissions()
+        }
         overlay.setPreviewing(visible)
     }
     onClosing: settings.save()
@@ -270,6 +277,23 @@ ApplicationWindow {
             onActivated: { win.update("screen", currentValue); win.settings.save() }
         }
 
+        // The whole keyboard, or only the device name and layer (feature 007).
+        Label { text: qsTr("Board style") }
+        ComboBox {
+            id: styleBox
+            // Focus by Tab only: after a click, typing on the keyboard must not
+            // pick another option (letters jump to matching entries).
+            focusPolicy: Qt.TabFocus
+            Layout.fillWidth: true
+            model: [
+                { value: "full", text: qsTr("Full keyboard") },
+                { value: "compact", text: qsTr("Compact: name and layer") }
+            ]
+            textRole: "text"
+            valueRole: "value"
+            onActivated: { win.update("style", currentValue); win.settings.save() }
+        }
+
         // Pressed keys on the board (feature 006). "No typing keys" never shows
         // letters, digits or symbols, e.g. while screen sharing.
         Label { text: qsTr("Highlight") }
@@ -343,6 +367,56 @@ ApplicationWindow {
                     win.kanata.notices.split(" · ").join("\n"),
                     win.overlay.notices.split(" · ").join("\n")
                 ].filter(s => s.length > 0).join("\n")
+        }
+
+        // Can Kanata run without root? Explained, never fixed for you (FR-010–012).
+        Label { text: qsTr("Permissions"); Layout.alignment: Qt.AlignTop }
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+            readonly property bool ready: !!win.permissions && win.permissions.fix === ""
+            Label {
+                visible: parent.ready
+                text: qsTr("✓ Kanata can run without root")
+            }
+            Repeater {
+                model: win.permissions && win.permissions.fix !== "" ? win.permissions.items : []
+                delegate: Label {
+                    required property var modelData
+                    text: (modelData.status === "ok" ? "✓ " : "✗ ") + modelData.name
+                          + (modelData.status === "needs-login" ? qsTr(" (log out and back in)")
+                             : modelData.status === "missing" ? qsTr(" (missing)") : "")
+                    color: modelData.status === "ok" ? palette.text : "#e57373"
+                }
+            }
+            RowLayout {
+                visible: !!win.permissions && win.permissions.fix !== ""
+                Layout.fillWidth: true
+                // Plain TextEdit: Breeze's TextArea warns at load (see LogWindow).
+                TextEdit {
+                    id: fixText
+                    Layout.fillWidth: true
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    font.family: "monospace"
+                    font.pixelSize: 11
+                    color: palette.text
+                    text: win.permissions ? win.permissions.fix : ""
+                }
+                Button {
+                    Layout.alignment: Qt.AlignTop
+                    text: qsTr("Copy")
+                    onClicked: { fixText.selectAll(); fixText.copy(); fixText.deselect() }
+                }
+            }
+        }
+
+        Label { text: qsTr("Start at login") }
+        CheckBox {
+            checked: !!win.desktop && win.desktop.startAtLogin
+            enabled: !!win.desktop
+            onToggled: win.desktop.setLogin(checked)
         }
 
         Item { Layout.columnSpan: 2; Layout.fillWidth: true; implicitHeight: 4 }

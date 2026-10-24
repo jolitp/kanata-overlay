@@ -12,12 +12,17 @@
 //! the overlay starts and supervises Kanata itself when none is running
 //! (`--kanata` names the program, default `kanata` on PATH).
 
+mod desktop_entry;
+mod desktop_state;
 mod device_state;
 mod global_shortcut;
+mod layer_color;
 mod layout_editor;
 mod overlay_state;
 mod platform;
 mod settings_state;
+mod single_instance;
+mod tray_state;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 
@@ -65,18 +70,68 @@ fn main() {
         .init();
 
     // Bad placement options stop us before any window opens (contracts/cli.md).
-    match settings::Overrides::parse(std::env::args().skip(1)) {
+    let settings_path = match settings::Overrides::parse(std::env::args().skip(1)) {
         Ok(overrides) => {
+            let path = overrides
+                .settings_path
+                .clone()
+                .or_else(settings::default_path);
             let _ = settings_state::OVERRIDES.set(overrides);
+            path
         }
         Err(e) => {
             eprintln!("kanata-overlay: {e}");
             std::process::exit(2);
         }
+    };
+
+    // One overlay per settings file (feature 007, FR-008): a second start opens
+    // the running one's settings instead.
+    let socket = single_instance::socket_path(
+        settings_path
+            .as_deref()
+            .unwrap_or(std::path::Path::new("kanata-overlay")),
+    );
+    match single_instance::claim(&socket) {
+        Ok(single_instance::Claim::Secondary) => {
+            println!("kanata-overlay is already running; opened its settings");
+            return;
+        }
+        Ok(single_instance::Claim::Primary(listener)) => {
+            if let Ok(mut l) = desktop_state::LISTENER.lock() {
+                *l = Some(listener);
+            }
+        }
+        Err(e) => tracing::warn!("single instance: {}: {e}", socket.display()),
+    }
+
+    // Known to the desktop (FR-009): menu entry and icon, pointing at
+    // something that starts outside the development shell (research R9).
+    if let Some(data) = desktop_entry::data_home() {
+        match desktop_entry::launch_target(&data, Args::from_env().kanata.as_deref()) {
+            Ok(target) => {
+                if let Err(e) = desktop_entry::install(&data, &target) {
+                    tracing::warn!("desktop entry: {e}");
+                }
+                // A login entry from an earlier build follows the new target.
+                if let Some(login) =
+                    desktop_entry::config_home().map(|c| desktop_entry::autostart_path(&c))
+                    && login.is_file()
+                    && let Err(e) = desktop_entry::write_if_changed(
+                        &login,
+                        &desktop_entry::autostart_entry(&target),
+                    )
+                {
+                    tracing::warn!("login entry: {e}");
+                }
+                let _ = desktop_state::LAUNCH.set(target);
+            }
+            Err(e) => tracing::warn!("launch target: {e}"),
+        }
     }
 
     // Wayland app id of our windows, and KGlobalAccel's view of who we are.
-    platform::set_desktop_file_name("io.github.jolitp.kanataoverlay");
+    platform::set_desktop_file_name(desktop_entry::APP_ID);
     // Without a platform theme (e.g. Nix's Qt, which can't load the desktop's
     // own Qt plugins), file dialogs fall back to a bare QML one: no hidden
     // files, no typed paths. The portal gives the desktop's real dialog.

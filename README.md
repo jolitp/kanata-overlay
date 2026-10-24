@@ -200,6 +200,37 @@ briefly shows **tap** (green) or **hold** (yellow) when Kanata decides.
 - Key presses stay in memory: they are never written to a file, a log or the settings,
   and there is no history.
 
+### Tray, compact boards and login
+
+- **Tray icons**: one per device in the panel's system tray, showing its layer as a
+  short label (`Base`, `Nav`, `Symb`…; `–` when not connected) on the layer's colour:
+  each layer name always gets the same colour from a palette of 8 (grey when not
+  connected), also used for the board's state dot and, in the tooltip, the
+  device name, layer and state. Left click shows or hides that device's board. The menu:
+  Show/Hide <device>, Show/Hide all boards, Compact board (a tick), Settings… (on that device), Restart Kanata ›
+  device, Quit. Showing all boards (menu or shortcut) brings back the ones hidden on
+  their own. Without a system
+  tray, the overlay says so once and keeps working with the shortcuts.
+- **Board style** (settings, per device): *Full keyboard*, or *Compact*: only the
+  device name and layer, at the same position, scale and opacity. A compact board reads
+  no key presses.
+- **Start at login** (settings): adds or removes the login entry
+  (`~/.config/autostart/io.github.jolitp.kanataoverlay.desktop`).
+- **Application menu**: the overlay installs its desktop entry and icon in
+  `~/.local/share/` when it starts (this also stops the "App info not found" warning).
+  Starting it again opens the running overlay's settings; one overlay runs per settings
+  file.
+- **Running it outside `nix develop`**: install the flake package
+  (`nix profile install .` or `inputs.kanata-overlay.packages.${system}.default` in
+  home-manager): it brings its Qt modules and Kanata, and the menu and login entries then
+  point at it. Run from a development build (`just run`), the entries point at
+  `~/.local/share/kanata-overlay/launch.sh`, which records the dev shell's Qt paths; it
+  stops working after a Nix garbage collection, until the next `just run` rewrites it.
+- **Permissions** (settings): whether Kanata can run without root here, what is missing
+  ("log out and back in" when the groups are set but this session is older), and the fix
+  for this system to copy (the `configuration.nix` lines on NixOS). The overlay never
+  applies it.
+
 ## Running Kanata without root
 
 Kanata needs to read `/dev/input/event*` and write `/dev/uinput`. Grant that to your
@@ -277,7 +308,9 @@ Suggested order for the first Spec Kit features:
    held keys, tap/hold results, press to bind. Originally: tap-hold events from the TCP protocol
    (`HoldActivated`/`TapActivated`), evdev on Kanata's output device, optional
    `--debug` output parsing.
-7. **Desktop integration**: tray icon, autostart, permissions setup through `pkexec`.
+7. ~~**Desktop integration**~~ ✅ done in [`specs/007-desktop-integration`](specs/007-desktop-integration/spec.md):
+   tray icon per device, compact boards, start at login, desktop entry, permission check
+   (explained, not applied: no `pkexec`).
 
 Example for step 1:
 

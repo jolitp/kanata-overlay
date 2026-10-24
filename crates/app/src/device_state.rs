@@ -131,6 +131,10 @@ pub mod qobject {
         #[qinvokable]
         fn cancel_capture(self: Pin<&mut DeviceState>);
 
+        /// `#rrggbb` for a layer, the same one its tray icon uses (feature 007).
+        #[qinvokable]
+        fn layer_color(self: &DeviceState, layer: &QString) -> QString;
+
         /// The key pressed after `capture()` (canonical name).
         #[qsignal]
         fn captured(self: Pin<&mut DeviceState>, key: QString);
@@ -574,6 +578,10 @@ impl qobject::DeviceState {
         self.rust().live.armed.store(false, Ordering::Relaxed);
         self.as_mut().clear_live();
         self.as_mut().set_can_restart(false);
+    }
+
+    fn layer_color(&self, layer: &QString) -> QString {
+        QString::from(&crate::layer_color::layer_color_hex(&layer.to_string()))
     }
 
     fn set_watching(self: Pin<&mut Self>, on: bool) {

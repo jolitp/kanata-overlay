@@ -13,6 +13,10 @@ Window {
     property bool first: false
 
     // This device's settings; touching revision re-reads them on every change.
+    // Shown unless hidden globally or on its own (its tray icon, feature 007);
+    // the settings window's preview shows every board.
+    readonly property bool shownHere: overlay.overlayVisible
+        && (overlay.inPreview || !JSON.parse(overlay.hiddenJson || "[]").includes(deviceId))
     readonly property var cfg: {
         void settings.revision
         return JSON.parse(settings.device(deviceId))
@@ -48,6 +52,7 @@ Window {
         device: win.device
         overlay: win.overlay
         first: win.first
+        compact: win.cfg.style === "compact"
         opacity: win.cfg.opacity
         scale: win.place.scale
         transformOrigin: Item.TopLeft
@@ -60,7 +65,7 @@ Window {
 
     Component.onCompleted: {
         checkScreen()
-        visible = Qt.binding(() => overlay.overlayVisible)
+        visible = Qt.binding(() => win.shownHere)
     }
     onTargetScreenChanged: checkScreen()
     onPlaceChanged: if (place.capped) overlay.addNotice(cfg.name + ": scale capped to fit the screen")

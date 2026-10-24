@@ -15,6 +15,7 @@ Project principles: `.specify/memory/constitution.md` (read before planning).
   - `src/device_state.rs` — one per device: its Kanata session, connection, layer, labels. Created by `qml/DeviceView.qml` through the `Instantiator` in `Main.qml` (a `ListModel` updated incrementally, so adding a device never restarts the others).
   - `src/overlay_state.rs` — global only: platform, global notices, show/hide.
   - `src/layout_editor.rs` — `LayoutEditor`, one editing session at a time, for `qml/LayoutEditorWindow.qml` (canvas keys: `qml/EditorKey.qml`). While dragging, QML shows only a transient offset/angle/edge change and commits it with one invokable on release; never edit layout state in QML.
+  - `src/tray_state.rs` — one tray icon per device through `ksni` (StatusNotifierItem without Qt Widgets: the app stays a QML `QGuiApplication`); icons drawn by `kog_tray_icon` in `cpp/qt_extras.cpp`; menu actions only queue signals. `src/desktop_state.rs` — Start at login, requests from a second start, the permission check (`kanata_client::permissions`). `src/single_instance.rs` (one instance per settings file), `src/desktop_entry.rs` (desktop/login entries, `launch.sh` for dev builds; the flake package wraps the binary instead).
   - `src/settings_state.rs` — settings v2 (a device list); per-device appearance and placement; the device check (rules in `kanata_client::check_devices`).
 - `examples/` — sample KLE layout and Kanata config used by `just run` / `just kanata`.
 - `specs/` — Spec Kit feature specs (created by `/speckit-specify`).
