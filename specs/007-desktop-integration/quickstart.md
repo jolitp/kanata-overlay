@@ -88,6 +88,13 @@ icon is drawn in it (grey when not connected) and the board's state dot uses it.
 Checked over D-Bus: Alpha's icon was blue (`#3b82f6`) in "base" and amber (`#d97706`)
 after switching to "nav".
 
+**App icon** (2026-10-24): a new icon (three layers in the palette colours under a
+keycap). The menu first showed a blank icon: a `icon-theme.cache` left by Lutris in
+`~/.local/share/icons/hicolor` lists only `128x128/apps`, so Qt trusted it and never
+looked in `scalable/apps`. The app now touches every theme folder when it installs a new
+icon, so such a cache counts as stale. After touching the folders, clearing Plasma's
+icon cache, `kbuildsycoca6` and restarting plasmashell, the user's menu shows the icon.
+
 **Not checked by the agent**: the "App info not found" warning going away needs the
 real `~/.local/share` (the portal reads the user's real data folders); the tray as
 drawn in the panel (checked through D-Bus instead); logging in with Start at login on.
