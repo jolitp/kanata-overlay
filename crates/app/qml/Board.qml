@@ -5,30 +5,39 @@ import QtQuick
 // scale it.
 Item {
     id: board
+    // DeviceState: connection, layer, labels, Kanata session of this device.
+    required property var device
+    // OverlayState: global notices (shown on the first board only).
     required property var overlay
-    // KanataState: managed / attached / restarting … (may be null)
-    property var kanata: null
+    property bool first: false
     property real unit: 54 // pixels per keyboard unit (1u)
     readonly property real pad: 16
 
-    readonly property var layout: overlay.layoutJson.length > 0 ? JSON.parse(overlay.layoutJson) : ({ name: "", keys: [] })
+    readonly property var layout: device.layoutJson.length > 0 ? JSON.parse(device.layoutJson) : ({ name: "", keys: [] })
     // Labels for the active layer, keyed by canonical Kanata key name; {} without a config.
-    readonly property var labels: JSON.parse(overlay.labelsJson)
+    readonly property var labels: JSON.parse(device.labelsJson)
     readonly property bool hasConfig: Object.keys(labels).length > 0
     readonly property var bounds: {
         // Bounding box of all key corners, after KLE rotation around (rx, ry).
-        let w = 0, h = 0
+        // Keys may sit left of or above 0 while the layout editor previews.
+        if (layout.keys.length === 0)
+            return { x: 0, y: 0, w: 0, h: 0 }
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
         for (const k of layout.keys) {
             const a = (k.rotation || 0) * Math.PI / 180
             const rx = k.rx || 0, ry = k.ry || 0
             for (const [cx, cy] of [[k.x, k.y], [k.x + k.width, k.y],
                                     [k.x, k.y + k.height], [k.x + k.width, k.y + k.height]]) {
                 const dx = cx - rx, dy = cy - ry
-                w = Math.max(w, rx + dx * Math.cos(a) - dy * Math.sin(a))
-                h = Math.max(h, ry + dx * Math.sin(a) + dy * Math.cos(a))
+                const px = rx + dx * Math.cos(a) - dy * Math.sin(a)
+                const py = ry + dx * Math.sin(a) + dy * Math.cos(a)
+                x0 = Math.min(x0, px); y0 = Math.min(y0, py)
+                x1 = Math.max(x1, px); y1 = Math.max(y1, py)
             }
         }
-        return { w: w, h: h }
+        // Saved layouts start at (0, 0); keep that origin unless keys go past it.
+        x0 = Math.min(x0, 0); y0 = Math.min(y0, 0)
+        return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
     }
 
     // Size at 100% scale.
@@ -53,7 +62,7 @@ Item {
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: 10; height: 10; radius: 5
-            color: board.overlay.connected ? "#4caf50" : "#9e9e9e"
+            color: board.device.connected ? "#4caf50" : "#9e9e9e"
         }
         Text {
             id: layerName
@@ -61,7 +70,8 @@ Item {
             color: "#e8e8e8"
             font.pixelSize: 16
             font.bold: true
-            text: board.overlay.connected ? (board.overlay.currentLayer || "…") : "kanata not connected"
+            text: (board.device.name ? board.device.name + " · " : "")
+                  + (board.device.connected ? (board.device.currentLayer || "…") : "not connected")
         }
         Text {
             anchors.verticalCenter: parent.verticalCenter
@@ -70,18 +80,18 @@ Item {
             color: "#8a8a8a"
             font.pixelSize: 12
             // While a managed Kanata is down, its state says why; "connecting to …" adds nothing.
-            readonly property bool managedDown: !!board.kanata && board.kanata.mode === "managed"
-                                                && !board.overlay.connected
-            text: [board.kanata ? board.kanata.stateText : "",
-                   managedDown ? "" : board.overlay.status,
-                   board.overlay.notices]
+            readonly property bool managedDown: board.device.mode === "managed" && !board.device.connected
+            text: [board.device.stateText,
+                   managedDown ? "" : board.device.status,
+                   board.device.notices,
+                   board.first ? board.overlay.notices : ""]
                   .filter(s => s.length > 0).join(" · ")
         }
     }
 
     Item {
-        x: board.pad
-        y: header.y + header.height + 8
+        x: board.pad - board.bounds.x * board.unit
+        y: header.y + header.height + 8 - board.bounds.y * board.unit
 
         Repeater {
             model: board.layout.keys

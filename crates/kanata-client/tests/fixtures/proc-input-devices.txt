@@ -1,0 +1,44 @@
+I: Bus=0011 Vendor=0001 Product=0001 Version=ab83
+N: Name="AT Translated Set 2 keyboard"
+H: Handlers=sysrq kbd event0 leds 
+B: EV=120013
+B: KEY=402000007 ff803078f800d001 feffffdfffcfffff fffffffffffffffe
+
+I: Bus=0003 Vendor=25a7 Product=fa07 Version=0110
+N: Name="Compx 2.4G Wireless Receiver"
+H: Handlers=event3 mouse0 
+B: EV=17
+B: KEY=1f0000 0 0 0 0
+B: REL=1943
+
+I: Bus=0003 Vendor=25a7 Product=fa07 Version=0110
+N: Name="Compx 2.4G Wireless Receiver Keyboard"
+H: Handlers=sysrq kbd event4 
+B: EV=10001f
+B: KEY=33eff 0 0 483ffff17aff32d bfd4444600000000 1 130c730b17c007 ffbf7bfad941dfff febeffdfffefffff fffffffffffffffe
+B: REL=1040
+
+I: Bus=0003 Vendor=25a7 Product=fa07 Version=0110
+N: Name="Compx 2.4G Wireless Receiver"
+H: Handlers=event6 
+B: EV=9
+
+I: Bus=0003 Vendor=25a7 Product=fa07 Version=0110
+N: Name="Compx 2.4G Wireless Receiver"
+H: Handlers=event7 
+B: EV=100001
+
+I: Bus=0003 Vendor=35ef Product=0012 Version=0111
+N: Name="DYGMA DEFY Keyboard"
+H: Handlers=sysrq kbd event13 leds 
+B: EV=12001f
+B: KEY=3f00033fff 0 0 483ffff17aff32d bfd4444600000000 1 130ff38b17d007 ffff7bfad941dfff ffbeffdfffefffff fffffffffffffffe
+B: REL=1040
+
+I: Bus=0003 Vendor=35ef Product=0012 Version=0111
+N: Name="DYGMA DEFY Mouse"
+H: Handlers=event15 mouse1 
+B: EV=17
+B: KEY=1f0000 0 0 0 0
+B: REL=1943
+

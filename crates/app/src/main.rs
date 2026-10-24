@@ -12,8 +12,9 @@
 //! the overlay starts and supervises Kanata itself when none is running
 //! (`--kanata` names the program, default `kanata` on PATH).
 
+mod device_state;
 mod global_shortcut;
-mod kanata_state;
+mod layout_editor;
 mod overlay_state;
 mod platform;
 mod settings_state;
@@ -76,6 +77,13 @@ fn main() {
 
     // Wayland app id of our windows, and KGlobalAccel's view of who we are.
     platform::set_desktop_file_name("io.github.jolitp.kanataoverlay");
+    // Without a platform theme (e.g. Nix's Qt, which can't load the desktop's
+    // own Qt plugins), file dialogs fall back to a bare QML one: no hidden
+    // files, no typed paths. The portal gives the desktop's real dialog.
+    if std::env::var_os("QT_QPA_PLATFORMTHEME").is_none() {
+        // SAFETY: still single-threaded; nothing reads the environment concurrently.
+        unsafe { std::env::set_var("QT_QPA_PLATFORMTHEME", "xdgdesktopportal") };
+    }
     let mut app = QGuiApplication::new();
     if let Some(app) = app.as_mut() {
         app.set_application_name(&QString::from("kanata-overlay"));

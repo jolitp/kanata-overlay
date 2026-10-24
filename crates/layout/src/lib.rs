@@ -12,6 +12,8 @@
 //! Layouts can be imported from Keyboard Layout Editor (KLE) JSON and are saved
 //! in the app's own JSON format ([`Layout::to_json`]).
 
+pub mod edit;
+
 use serde::{Deserialize, Serialize};
 
 /// Current version of the on-disk layout format.
@@ -35,6 +37,24 @@ pub struct Layout {
     pub version: u32,
     pub name: String,
     pub keys: Vec<Key>,
+    /// A reference picture shown under the keys in the layout editor only
+    /// (e.g. a screenshot of the vendor's configurator); boards ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<Background>,
+}
+
+/// The layout editor's reference image, placed in key units.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Background {
+    /// Absolute path of the image file.
+    pub path: String,
+    /// Top-left corner, in units.
+    pub x: f64,
+    pub y: f64,
+    /// Width in units; the height follows the image's aspect ratio.
+    pub width: f64,
+    /// 0.05–1.
+    pub opacity: f64,
 }
 
 /// One physical key. Units are keyboard units (1u ≈ 19.05 mm).
@@ -65,6 +85,33 @@ fn is_zero(v: &f64) -> bool {
 }
 
 impl Layout {
+    /// A plain grid of 1u keys, `columns` per row, for a device without a
+    /// layout file: every key is bound to its Kanata name (feature 004, R7).
+    pub fn grid(name: &str, names: &[String], columns: usize) -> Self {
+        let columns = columns.max(1);
+        let keys = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| Key {
+                x: (i % columns) as f64,
+                y: (i / columns) as f64,
+                width: 1.0,
+                height: 1.0,
+                rotation: 0.0,
+                rx: 0.0,
+                ry: 0.0,
+                kanata: Some(n.clone()),
+                legend: n.clone(),
+            })
+            .collect();
+        Self {
+            version: FORMAT_VERSION,
+            name: name.to_owned(),
+            keys,
+            background: None,
+        }
+    }
+
     /// Import a layout exported from keyboard-layout-editor.com
     /// ("Download JSON", or the raw data tab wrapped in `[...]`).
     ///
@@ -103,6 +150,7 @@ impl Layout {
             version: FORMAT_VERSION,
             name: kb.metadata.name,
             keys,
+            background: None,
         })
     }
 
@@ -179,6 +227,21 @@ pub fn guess_kanata_name(legend: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_of_names() {
+        let names: Vec<String> = (0..13).map(|i| format!("k{i}")).collect();
+        let g = Layout::grid("mouse", &names, 12);
+        assert_eq!(g.keys.len(), 13);
+        assert_eq!((g.keys[12].x, g.keys[12].y), (0.0, 1.0));
+        assert!(
+            g.keys
+                .iter()
+                .zip(&names)
+                .all(|(k, n)| k.kanata.as_ref() == Some(n))
+        );
+        assert!(g.unbound().next().is_none());
+    }
 
     // Two rows, including a 1.5u Tab and a rotated thumb key like you would find
     // on a split/ergonomic board.

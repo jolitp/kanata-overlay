@@ -22,7 +22,8 @@ physical key ──kanata name──▶ index in defsrc ──▶ action in the 
 
 Layouts can be imported from [keyboard-layout-editor.com](https://www.keyboard-layout-editor.com/)
 JSON; obvious legends (`Q`, `Esc`, `Caps Lock`…) are bound automatically and unbound
-keys are outlined in orange.
+keys are outlined in orange. The [layout editor](#layout-editor) binds the rest and
+shapes a board to match the device.
 
 ## Quick start
 
@@ -109,6 +110,80 @@ killed, so the keyboard is never left grabbed. If anything ever looks wrong, the
 keyboard still works through Kanata, and `pkill -x kanata` from a terminal releases it (`-x` matches the exact name; plain
 `pkill kanata` would also kill `kanata-overlay`).
 
+### Several devices
+
+Kanata maps keys by key code, not by device. If two devices send the same keys
+(e.g. a mouse keypad sending Esc, Tab, Ctrl…) but should behave differently, each needs
+its **own Kanata**, limited to its device. The overlay runs one Kanata per device and
+shows one board per device, each with its own layer and labels.
+
+- **Add devices** in the settings window (Meta+Alt+Shift+K): **Add**, then a name,
+  its Kanata config and its layout (**Browse…**). Without a layout, the board is a grid
+  of the config's keys.
+- **Placement**: each board has its own position, margin, opacity, scale and monitor.
+- **Addresses**: the first device uses `--connect` (127.0.0.1:7070); the others use
+  7071, 7072, … unless you set an address.
+- **Untouched devices**: a device you don't add (like a laptop keyboard) is never
+  grabbed or shown, as long as every config limits itself to its devices.
+
+Each config names its devices with Kanata's own options. Names must match exactly; get
+them from `kanata --list` or `/proc/bus/input/devices`:
+
+```lisp
+;; defy.kbd
+(defcfg linux-dev-names-include ("DYGMA DEFY Keyboard")
+        linux-continue-if-no-devs-found yes)   ;; wait instead of exiting while unplugged
+
+;; mouse.kbd: keypad and side buttons are separate devices; several receiver
+;; devices may share one name, and this grabs all of them
+(defcfg linux-dev-names-include ("Compx 2.4G Wireless Receiver"
+                                 "Compx 2.4G Wireless Receiver Keyboard")
+        linux-continue-if-no-devs-found yes)
+(defsrc esc tab caps bspc del ret spc lctl lalt lsft lmet mbck mfwd)
+```
+
+`linux-dev` paths work too, including stable `/dev/input/by-id/…` links, which can
+pick single devices of a receiver that shares one name (e.g.
+`…Compx_2.4G_Wireless_Receiver-if01-event-kbd:…Compx_2.4G_Wireless_Receiver-event-mouse`).
+
+With several devices, the overlay checks which devices each config would grab. If two
+configs would grab the same device, or a config doesn't limit itself (and would grab
+every keyboard), the board says so, and the later Kanata of an overlapping pair is not
+started.
+
+### Layout editor
+
+Settings → select a device → **Edit layout…** opens the device's board in an editor
+window. It starts from the board you see: the layout file, or the grid of the config's
+keys.
+
+- **Bind keys**: select a key and pick its Kanata key in **Key**. The config's keys that
+  aren't on the layout yet come first; every other Kanata name is searchable (`ret`,
+  `enter`, `⏎`… all find Enter). Unknown names are refused.
+- **Marks**: unbound keys have an orange border and a "?", keys bound to a name the
+  config doesn't list are yellow ("∉"), duplicate bindings show "2×", overlapping keys
+  are tinted red. The status line counts them.
+- **Arrange**: click to select (Shift/Ctrl+click adds), drag on the background for a
+  box, drag keys to move, drag the edge handles to resize and the round handle to rotate. The mouse wheel zooms around the pointer; right- or middle-drag pans
+  (several keys rotate around their centre). Exact values go in X, Y, Width, Height and
+  Rotation. Positions snap to ¼ key and angles to 5° unless **Snap** is off. Arrows
+  nudge (Shift: 1u); Ctrl+D duplicates, Delete deletes, Ctrl+Z / Ctrl+Shift+Z undo
+  and redo.
+- **Reference image**: **Choose image…** puts a picture under the keys (for example a
+  screenshot of your keyboard in its vendor's configurator, such as Bazecor). Alt+drag
+  moves it, Alt+wheel scales it, and X, Y, Width and Opacity place it exactly. Match one
+  key in the picture to one key on the grid, then drag the keys over the picture. It is
+  saved with the layout and only shown in the editor.
+- **Preview**: every change shows on the device's board; closing without saving puts
+  the saved layout back.
+- **Save** (Ctrl+S): a layout already in the app's format is updated in place. Anything
+  else (no layout, the grid, a keyboard-layout-editor export) is saved as a new file
+  `layouts/<device name>.json` next to `settings.json`, and the device switches to it.
+  Exports are never overwritten, the device's Kanata isn't restarted, and if the file
+  changed on disk meanwhile you choose to overwrite or reload.
+
+The editor never touches the Kanata config and reads no key presses.
+
 ## Running Kanata without root
 
 Kanata needs to read `/dev/input/event*` and write `/dev/uinput`. Grant that to your
@@ -177,11 +252,15 @@ Suggested order for the first Spec Kit features:
 3. ~~**Managed Kanata**~~ ✅ done in [`specs/003-managed-kanata`](specs/003-managed-kanata/spec.md) (the `systemd --user` mode is deferred): launch Kanata with a localhost TCP port, readiness probing,
    log panel, restart with backoff, `PR_SET_PDEATHSIG`; attach mode when Kanata is
    already running; optional `systemd --user` mode.
-4. **Layout editor**: bind unbound keys, move/resize/rotate keys, save layouts.
-5. **Live key highlighting**: tap-hold events from the TCP protocol
+4. ~~**Several devices**~~ ✅ done in [`specs/004-multi-device`](specs/004-multi-device/spec.md):
+   one Kanata and one board per device.
+5. ~~**Layout editor**~~ ✅ done in [`specs/005-layout-editor`](specs/005-layout-editor/spec.md):
+   bind unbound keys, move/resize/rotate/add/delete keys, save layouts (press-to-bind
+   comes with item 6).
+6. **Live key highlighting**: tap-hold events from the TCP protocol
    (`HoldActivated`/`TapActivated`), evdev on Kanata's output device, optional
    `--debug` output parsing.
-6. **Desktop integration**: tray icon, autostart, permissions setup through `pkexec`.
+7. **Desktop integration**: tray icon, autostart, permissions setup through `pkexec`.
 
 Example for step 1:
 

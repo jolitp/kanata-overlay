@@ -63,6 +63,8 @@ pub struct SupervisorOptions {
     pub backoff_unit: Duration,
     /// SIGTERM, then SIGKILL after this long.
     pub stop_grace: Duration,
+    /// Retry a Kanata whose devices are missing this often (or when one appears).
+    pub device_retry: Duration,
 }
 
 impl Default for SupervisorOptions {
@@ -71,6 +73,7 @@ impl Default for SupervisorOptions {
             ready_timeout: Duration::from_secs(10),
             backoff_unit: Duration::from_secs(1),
             stop_grace: Duration::from_millis(1500),
+            device_retry: Duration::from_secs(10),
         }
     }
 }
@@ -221,6 +224,16 @@ impl Run {
                 }
             }
 
+            if failure == Failure::NoDevice {
+                // Not a crash loop: wait for the device, without counting
+                // towards giving up (feature 004).
+                self.state(SessionState::WaitingForKeyboard);
+                if self.wait_for_device() {
+                    continue;
+                }
+                break;
+            }
+
             if !failure.retryable() {
                 self.state(SessionState::Failed(failure));
                 if self.wait_for_restart() {
@@ -258,6 +271,27 @@ impl Run {
             }
         }
         self.state(SessionState::Stopped);
+    }
+
+    /// Wait up to `device_retry`, or until `/dev/input` changes; false on Stop.
+    fn wait_for_device(&mut self) -> bool {
+        let before = input_listing();
+        let deadline = Instant::now() + self.timings.device_retry;
+        while Instant::now() < deadline {
+            let step = Duration::from_secs(1).min(self.timings.device_retry);
+            match self.rx.recv_timeout(step) {
+                Err(RecvTimeoutError::Timeout) => {}
+                Ok(Command::Restart) => {
+                    self.backoff.clear();
+                    return true;
+                }
+                Ok(Command::Stop) | Err(RecvTimeoutError::Disconnected) => return false,
+            }
+            if input_listing() != before {
+                return true;
+            }
+        }
+        true
     }
 
     /// Failed state: wait for a user restart (true) or stop (false).
@@ -418,6 +452,20 @@ fn push(log: &Log, lines: impl Iterator<Item = String>) {
             log.push_back(line);
         }
     }
+}
+
+/// The `event*` files in `/dev/input`, to notice a device being plugged in.
+fn input_listing() -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir("/dev/input")
+        .map(|dir| {
+            dir.filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.starts_with("event"))
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
 }
 
 fn launcher_addr(port: u16) -> SocketAddr {

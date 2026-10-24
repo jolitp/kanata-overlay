@@ -1,14 +1,21 @@
-//! The overlay settings as QML sees them: file values with CLI overrides on top.
+//! The settings as QML sees them: the device list, each device's settings and
+//! appearance (with CLI overrides when there is one device), and the device
+//! check (contracts/interfaces.md › SettingsState).
 //!
-//! All rules live in the `settings` crate; this is only the bridge.
+//! All rules live in the `settings`, `kbd` and `kanata-client` crates; this is
+//! only the bridge.
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::OnceLock;
 
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::QString;
-use settings::{Edge, Field, Overrides, Rect, Settings, Size};
+use cxx_qt_lib::{QRectF, QSizeF, QString};
+use serde_json::{Value, json};
+use settings::{Device, Edge, Field, Overrides, Rect, Settings, Size};
+
+use crate::Args;
 
 /// Command-line overrides, parsed in `main` before Qt starts.
 pub static OVERRIDES: OnceLock<Overrides> = OnceLock::new();
@@ -18,57 +25,68 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qrectf.h");
+        type QRectF = cxx_qt_lib::QRectF;
+        include!("cxx-qt-lib/qsizef.h");
+        type QSizeF = cxx_qt_lib::QSizeF;
     }
 
     #[auto_cxx_name]
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        /// `top`, `bottom`, `left` or `right`.
-        #[qproperty(QString, edge)]
-        /// Logical pixels from the edge.
-        #[qproperty(i32, margin)]
-        /// 0.10 – 1.00.
-        #[qproperty(f64, opacity)]
-        /// Percent, as configured (before capping to fit the screen).
-        #[qproperty(i32, scale)]
-        /// Qt screen name; empty means the primary screen.
-        #[qproperty(QString, screen_name)]
+        /// JSON array of device ids, in order: the model of Main.qml's Instantiator.
+        #[qproperty(QString, device_ids)]
+        /// Bumped on every device change; bindings touch it (feature 001's lesson).
+        #[qproperty(i32, revision)]
         /// The settings file in use, for messages.
         #[qproperty(QString, path)]
         type SettingsState = super::SettingsStateRust;
 
-        /// Read the file and apply the command-line overrides.
+        /// Read the file, apply the command-line overrides, check the devices.
         #[qinvokable]
         fn load(self: Pin<&mut SettingsState>);
 
+        /// One device's settings as JSON (id, name, config, layout, address,
+        /// edge, margin, opacity 0–1, scale %, screen, index).
         #[qinvokable]
-        fn update_edge(self: Pin<&mut SettingsState>, edge: &QString);
+        fn device(self: &SettingsState, id: &QString) -> QString;
+
+        /// The device check for one device as JSON `{blocked, warnings}`.
         #[qinvokable]
-        fn update_margin(self: Pin<&mut SettingsState>, margin: i32);
+        fn device_check(self: &SettingsState, id: &QString) -> QString;
+
+        /// Re-run the device check (configs edited, devices plugged in or out);
+        /// bumps the revision only if a result changed.
         #[qinvokable]
-        fn update_opacity_percent(self: Pin<&mut SettingsState>, percent: i32);
+        fn recheck(self: Pin<&mut SettingsState>);
+
+        /// Add a device; returns its id.
         #[qinvokable]
-        fn update_scale_percent(self: Pin<&mut SettingsState>, percent: i32);
+        fn add_device(self: Pin<&mut SettingsState>, name: &QString) -> QString;
+
         #[qinvokable]
-        fn update_screen_name(self: Pin<&mut SettingsState>, name: &QString);
+        fn remove_device(self: Pin<&mut SettingsState>, id: &QString);
+
+        /// Change one field: name, config, layout, address, edge, margin,
+        /// opacity (percent), scale (percent) or screen. Live; saved by `save()`.
+        #[qinvokable]
+        fn update_device(
+            self: Pin<&mut SettingsState>,
+            id: &QString,
+            field: &QString,
+            value: &QString,
+        );
 
         /// Write the file if anything changed since the last save.
         #[qinvokable]
         fn save(self: Pin<&mut SettingsState>) -> bool;
 
-        /// Window geometry for the board on a screen, as JSON
+        /// Window geometry for a device's board on a screen, as JSON
         /// `{x, y, width, height, scale, capped}`.
         #[qinvokable]
-        fn placement(
-            self: &SettingsState,
-            screen_x: f64,
-            screen_y: f64,
-            screen_w: f64,
-            screen_h: f64,
-            base_w: f64,
-            base_h: f64,
-        ) -> QString;
+        fn placement(self: &SettingsState, id: &QString, screen: &QRectF, base: &QSizeF)
+        -> QString;
 
         /// Something about the settings the user should know.
         #[qsignal]
@@ -76,52 +94,31 @@ pub mod qobject {
     }
 }
 
+#[derive(Default)]
 pub struct SettingsStateRust {
-    edge: QString,
-    margin: i32,
-    opacity: f64,
-    scale: i32,
-    screen_name: QString,
+    device_ids: QString,
+    revision: i32,
     path: QString,
 
+    /// What is (or will be) saved.
     file: Settings,
+    /// The devices shown this run (file devices, or the implicit one).
+    devices: Vec<Device>,
+    /// `devices` came from the command line, not the file (not saved yet).
+    implicit: bool,
     overrides: Overrides,
+    cli_config: Option<PathBuf>,
+    cli_layout: Option<PathBuf>,
+    cli_address: String,
+    checks: HashMap<String, Value>,
     file_path: Option<PathBuf>,
     dirty: bool,
-}
-
-impl Default for SettingsStateRust {
-    fn default() -> Self {
-        let mut this = Self {
-            edge: QString::default(),
-            margin: 0,
-            opacity: 0.0,
-            scale: 0,
-            screen_name: QString::default(),
-            path: QString::default(),
-            file: Settings::default(),
-            overrides: Overrides::default(),
-            file_path: None,
-            dirty: false,
-        };
-        this.copy_from(&Settings::default());
-        this
-    }
-}
-
-impl SettingsStateRust {
-    fn copy_from(&mut self, s: &Settings) {
-        self.edge = QString::from(s.edge.as_str());
-        self.margin = s.margin as i32;
-        self.opacity = f64::from(s.opacity) / 100.0;
-        self.scale = i32::from(s.scale);
-        self.screen_name = QString::from(s.screen.as_deref().unwrap_or(""));
-    }
 }
 
 impl qobject::SettingsState {
     fn load(mut self: Pin<&mut Self>) {
         let overrides = OVERRIDES.get().cloned().unwrap_or_default();
+        let args = Args::from_env();
         let path = overrides
             .settings_path
             .clone()
@@ -152,45 +149,152 @@ impl qobject::SettingsState {
             let mut rust = self.as_mut().rust_mut();
             rust.file = outcome.settings;
             rust.overrides = overrides;
+            rust.cli_config = args.config;
+            rust.cli_layout = args.layout;
+            rust.cli_address = args.address;
             rust.file_path = path;
             rust.dirty = false;
         }
         self.as_mut().set_path(QString::from(&display));
-        self.publish();
+        self.refresh(true);
     }
 
-    fn update_edge(self: Pin<&mut Self>, edge: &QString) {
-        if let Ok(edge) = edge.to_string().parse::<Edge>() {
-            self.change(Field::Edge, |s| s.edge = edge);
+    fn device(&self, id: &QString) -> QString {
+        let id = id.to_string();
+        let rust = self.rust();
+        let Some((index, d)) = rust.devices.iter().enumerate().find(|(_, d)| d.id == id) else {
+            return QString::from("{}");
+        };
+        let path = |p: &Option<PathBuf>| p.as_ref().map(|p| p.display().to_string());
+        let json = json!({
+            "id": d.id,
+            "name": d.name,
+            "config": path(&d.config),
+            "layout": path(&d.layout),
+            // The first device keeps `--connect` (default 127.0.0.1:7070, FR-002);
+            // the others default to 7070 + index (research R4).
+            "address": d.address.clone().unwrap_or_else(|| if index == 0 {
+                rust.cli_address.clone()
+            } else {
+                settings::default_address(index)
+            }),
+            "customAddress": d.address,
+            "edge": d.appearance.edge.as_str(),
+            "margin": d.appearance.margin,
+            "opacity": f64::from(d.appearance.opacity) / 100.0,
+            "scale": d.appearance.scale,
+            "screen": d.appearance.screen.clone().unwrap_or_default(),
+            "index": index,
+        });
+        QString::from(&json.to_string())
+    }
+
+    fn recheck(mut self: Pin<&mut Self>) {
+        let checks = check_devices(&self.rust().devices);
+        if checks != self.rust().checks {
+            self.as_mut().rust_mut().checks = checks;
+            let revision = self.revision() + 1;
+            self.as_mut().set_revision(revision);
         }
     }
 
-    fn update_margin(self: Pin<&mut Self>, margin: i32) {
-        let range = settings::MARGIN_RANGE;
-        let margin = (margin.max(0) as u32).clamp(*range.start(), *range.end());
-        self.change(Field::Margin, |s| s.margin = margin);
+    fn device_check(&self, id: &QString) -> QString {
+        let check = self.rust().checks.get(&id.to_string()).cloned();
+        QString::from(&check.unwrap_or_else(|| json!({})).to_string())
     }
 
-    fn update_opacity_percent(self: Pin<&mut Self>, percent: i32) {
-        let range = settings::OPACITY_RANGE;
-        let percent = percent.clamp(i32::from(*range.start()), i32::from(*range.end())) as u8;
-        self.change(Field::Opacity, |s| s.opacity = percent);
+    fn add_device(mut self: Pin<&mut Self>, name: &QString) -> QString {
+        self.as_mut().materialize();
+        let id = self.as_mut().rust_mut().file.add_device(&name.to_string());
+        self.as_mut().rust_mut().dirty = true;
+        self.as_mut().save();
+        self.refresh(true);
+        QString::from(&id)
     }
 
-    fn update_scale_percent(self: Pin<&mut Self>, percent: i32) {
-        let range = settings::SCALE_RANGE;
-        let percent = percent.clamp(i32::from(*range.start()), i32::from(*range.end())) as u16;
-        self.change(Field::Scale, |s| s.scale = percent);
+    fn remove_device(mut self: Pin<&mut Self>, id: &QString) {
+        self.as_mut().materialize();
+        self.as_mut().rust_mut().file.remove_device(&id.to_string());
+        self.as_mut().rust_mut().dirty = true;
+        self.as_mut().save();
+        self.refresh(true);
     }
 
-    fn update_screen_name(self: Pin<&mut Self>, name: &QString) {
-        let name = name.to_string();
-        let screen = (!name.is_empty()).then_some(name);
-        self.change(Field::Screen, |s| s.screen = screen);
+    fn update_device(mut self: Pin<&mut Self>, id: &QString, field: &QString, value: &QString) {
+        let (id, field, value) = (id.to_string(), field.to_string(), value.to_string());
+        self.as_mut().materialize();
+        let structural = matches!(field.as_str(), "config" | "layout" | "address");
+        let number = |v: &str| v.trim().parse::<f64>().ok().map(|n| n.round() as i64);
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let path = |v: &str| settings::typed_path(v, home.as_deref());
+        {
+            let mut rust = self.as_mut().rust_mut();
+            let single = rust.file.devices.len() == 1;
+            let Some(d) = rust.file.device_mut(&id) else {
+                return;
+            };
+            let a = &mut d.appearance;
+            let cleared = match field.as_str() {
+                "name" if !value.trim().is_empty() => {
+                    d.name = value.trim().chars().take(40).collect();
+                    None
+                }
+                "config" => {
+                    d.config = path(&value);
+                    None
+                }
+                "layout" => {
+                    d.layout = path(&value);
+                    None
+                }
+                "address" => {
+                    d.address = (!value.trim().is_empty()).then(|| value.trim().to_owned());
+                    None
+                }
+                "edge" => {
+                    let Ok(edge) = value.parse::<Edge>() else {
+                        return;
+                    };
+                    a.edge = edge;
+                    Some(Field::Edge)
+                }
+                "margin" => {
+                    let Some(n) = number(&value) else { return };
+                    let r = settings::MARGIN_RANGE;
+                    a.margin = (n.max(0) as u32).clamp(*r.start(), *r.end());
+                    Some(Field::Margin)
+                }
+                "opacity" => {
+                    let Some(n) = number(&value) else { return };
+                    let r = settings::OPACITY_RANGE;
+                    a.opacity = n.clamp(i64::from(*r.start()), i64::from(*r.end())) as u8;
+                    Some(Field::Opacity)
+                }
+                "scale" => {
+                    let Some(n) = number(&value) else { return };
+                    let r = settings::SCALE_RANGE;
+                    a.scale = n.clamp(i64::from(*r.start()), i64::from(*r.end())) as u16;
+                    Some(Field::Scale)
+                }
+                "screen" => {
+                    a.screen = (!value.is_empty()).then_some(value.clone());
+                    Some(Field::Screen)
+                }
+                _ => return,
+            };
+            // A user edit wins over the command line (feature 001, FR-011d).
+            if let Some(f) = cleared
+                && single
+            {
+                rust.overrides.clear(f);
+            }
+            rust.dirty = true;
+        }
+        self.refresh(structural);
     }
 
     fn save(mut self: Pin<&mut Self>) -> bool {
-        if !self.rust().dirty {
+        if !self.rust().dirty || self.rust().implicit {
             return true;
         }
         let Some(path) = self.rust().file_path.clone() else {
@@ -210,32 +314,31 @@ impl qobject::SettingsState {
         }
     }
 
-    fn placement(
-        &self,
-        screen_x: f64,
-        screen_y: f64,
-        screen_w: f64,
-        screen_h: f64,
-        base_w: f64,
-        base_h: f64,
-    ) -> QString {
-        let effective = self.rust().overrides.effective(&self.rust().file);
+    fn placement(&self, id: &QString, screen: &QRectF, base: &QSizeF) -> QString {
+        let id = id.to_string();
+        let appearance = self
+            .rust()
+            .devices
+            .iter()
+            .find(|d| d.id == id)
+            .map(|d| d.appearance.clone())
+            .unwrap_or_default();
         let p = settings::place(
             Rect {
-                x: screen_x as i32,
-                y: screen_y as i32,
-                width: screen_w as i32,
-                height: screen_h as i32,
+                x: screen.x() as i32,
+                y: screen.y() as i32,
+                width: screen.width() as i32,
+                height: screen.height() as i32,
             },
             Size {
-                width: base_w.ceil() as i32,
-                height: base_h.ceil() as i32,
+                width: base.width().ceil() as i32,
+                height: base.height().ceil() as i32,
             },
-            effective.edge,
-            effective.margin,
-            effective.scale,
+            appearance.edge,
+            appearance.margin,
+            appearance.scale,
         );
-        let json = serde_json::json!({
+        let json = json!({
             "x": p.x,
             "y": p.y,
             "width": p.size.width,
@@ -246,26 +349,88 @@ impl qobject::SettingsState {
         QString::from(&json.to_string())
     }
 
-    /// Apply a user edit: it wins over the command line and is saved later.
-    fn change(mut self: Pin<&mut Self>, field: Field, edit: impl FnOnce(&mut Settings)) {
-        {
+    /// The implicit device is about to be edited: make it a saved device.
+    fn materialize(mut self: Pin<&mut Self>) {
+        if self.rust().implicit {
             let mut rust = self.as_mut().rust_mut();
-            edit(&mut rust.file);
-            rust.overrides.clear(field);
-            rust.dirty = true;
+            rust.file.devices = rust.devices.clone();
+            rust.implicit = false;
         }
-        self.publish();
     }
 
-    /// Push the effective settings to the QML properties.
-    fn publish(mut self: Pin<&mut Self>) {
-        let effective = self.rust().overrides.effective(&self.rust().file);
-        let mut values = SettingsStateRust::default();
-        values.copy_from(&effective);
-        self.as_mut().set_edge(values.edge);
-        self.as_mut().set_margin(values.margin);
-        self.as_mut().set_opacity(values.opacity);
-        self.as_mut().set_scale(values.scale);
-        self.as_mut().set_screen_name(values.screen_name);
+    /// Recompute the shown devices (and, if `check`, the device check), then
+    /// publish ids and bump the revision.
+    fn refresh(mut self: Pin<&mut Self>, check: bool) {
+        {
+            let mut rust = self.as_mut().rust_mut();
+            let devices = rust.file.effective_devices(
+                &rust.overrides,
+                rust.cli_config.as_deref(),
+                rust.cli_layout.as_deref(),
+            );
+            rust.implicit = rust.file.devices.is_empty();
+            rust.devices = devices;
+            if check {
+                rust.checks = check_devices(&rust.devices);
+            }
+        }
+        let ids: Vec<&str> = self.rust().devices.iter().map(|d| d.id.as_str()).collect();
+        let ids = QString::from(&serde_json::to_string(&ids).unwrap_or_default());
+        if ids != *self.device_ids() {
+            self.as_mut().set_device_ids(ids);
+        }
+        let revision = self.revision() + 1;
+        self.as_mut().set_revision(revision);
     }
+}
+
+/// Run the device check (feature 004, FR-011) over the devices with a readable
+/// config. The rules are in `kanata_client::check_devices`.
+fn check_devices(devices: &[Device]) -> HashMap<String, Value> {
+    let selections: Vec<(String, String, kbd::DeviceSelection)> = devices
+        .iter()
+        .filter_map(|d| {
+            let config = d.config.as_ref()?;
+            let parsed = kbd::read(config).ok()?;
+            let selection = kanata_client::resolve_links(&parsed.devices);
+            Some((d.id.clone(), file_name(config), selection))
+        })
+        .collect();
+    let present = match kanata_client::input_devices() {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("cannot read the input device list: {e}");
+            return HashMap::new();
+        }
+    };
+    // With a single device there is nothing to overlap with, and an unlimited
+    // config is today's normal single-device setup: only warn with several.
+    let several = devices.len() > 1;
+    kanata_client::check_devices(&selections, &present)
+        .into_iter()
+        .map(|v| {
+            let warnings: Vec<&String> = if several {
+                v.warnings.iter().collect()
+            } else {
+                Vec::new()
+            };
+            let blocked = v.blocked_by.as_ref().map(|b| {
+                devices
+                    .iter()
+                    .find(|d| &d.id == b)
+                    .map(|d| d.name.clone())
+                    .unwrap_or_else(|| b.clone())
+            });
+            (
+                v.id.clone(),
+                json!({ "blocked": blocked, "warnings": warnings }),
+            )
+        })
+        .collect()
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
 }
