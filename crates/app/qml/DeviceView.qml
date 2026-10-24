@@ -13,12 +13,31 @@ QtObject {
     required property var overlay
     /// The first board also shows the global notices.
     property bool first: false
+    /// The layout editor's device, "" when closed (feature 006: it shows presses too).
+    property string editedId: ""
+    // Presses are read only while something shows them (FR-004).
+    // A compact board has no keys to light (feature 007, FR-006).
+    readonly property bool compact: { void settings.revision; return JSON.parse(settings.device(deviceId)).style === "compact" }
+    readonly property bool boardShown: overlay.overlayVisible
+        && (overlay.inPreview || !JSON.parse(overlay.hiddenJson || "[]").includes(deviceId))
+    readonly property bool watched: (boardShown && !compact) || editedId === deviceId
+    onWatchedChanged: deviceState.setWatching(watched)
     property Window window
     readonly property var device: deviceState
+
+    /// Something the tray shows changed (feature 007).
+    signal trayChanged()
+    onCompactChanged: trayChanged()
 
     property list<QtObject> objects: [
         DeviceState {
             id: deviceState
+            onNameChanged: view.trayChanged()
+            onCurrentLayerChanged: view.trayChanged()
+            onStateTextChanged: view.trayChanged()
+            onStatusChanged: view.trayChanged()
+            onConnectedChanged: view.trayChanged()
+            onModeChanged: view.trayChanged()
         },
         // Settings changed: restart this device's session if its config,
         // layout or address changed (FR-001a).
@@ -38,6 +57,7 @@ QtObject {
 
     Component.onCompleted: {
         deviceState.start(settings.device(deviceId), settings.deviceCheck(deviceId))
+        deviceState.setWatching(watched)
         const variant = Qt.createComponent(overlay.useLayerShell ? "LayerShellOverlay.qml" : "FallbackOverlay.qml")
         window = variant.createObject(view, {
             device: deviceState,

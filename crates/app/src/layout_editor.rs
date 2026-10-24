@@ -111,6 +111,11 @@ pub mod qobject {
         #[qinvokable]
         fn set_legend(self: Pin<&mut LayoutEditor>, text: &QString);
 
+        /// The name to bind for a pressed key (feature 006): the config's own
+        /// spelling of it, else Kanata's shortest plain-text one.
+        #[qinvokable]
+        fn name_for(self: &LayoutEditor, canonical: &QString) -> QString;
+
         /// Picker entries `[{name, canonical, aliases, group}]` (research R8).
         #[qinvokable]
         fn key_names(self: &LayoutEditor, filter: &QString) -> QString;
@@ -414,6 +419,19 @@ impl qobject::LayoutEditor {
             e.redo();
             Ok(())
         });
+    }
+
+    fn name_for(&self, canonical: &QString) -> QString {
+        let canonical = canonical.to_string();
+        let name = self
+            .rust()
+            .config_keys
+            .iter()
+            .find(|k| kbd::canonical(k) == canonical)
+            .map(String::as_str)
+            .or_else(|| kbd::preferred_name(&canonical))
+            .unwrap_or_default();
+        QString::from(name)
     }
 
     fn key_names(&self, filter: &QString) -> QString {

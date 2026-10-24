@@ -16,6 +16,15 @@ pub mod ffi {
         include!("kanata-overlay/cpp/qt_extras.h");
         fn kog_platform_name() -> QString;
         fn kog_set_desktop_file_name(name: &QString);
+        /// A tray icon's pixels (feature 007): ARGB32, network byte order.
+        fn kog_tray_icon(
+            label: &QString,
+            connected: bool,
+            r: i32,
+            g: i32,
+            b: i32,
+            size: i32,
+        ) -> Vec<u8>;
     }
 }
 

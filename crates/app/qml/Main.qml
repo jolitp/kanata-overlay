@@ -32,11 +32,13 @@ QtObject {
             delegate: DeviceView {
                 required property int index
                 first: index === 0
+                editedId: layoutEditor.deviceId
+                onTrayChanged: root.updateTray()
                 settings: settingsState
                 overlay: overlayState
             }
-            onObjectAdded: root.updateDeviceStates()
-            onObjectRemoved: root.updateDeviceStates()
+            onObjectAdded: { root.updateDeviceStates(); root.updateTray() }
+            onObjectRemoved: { root.updateDeviceStates(); root.updateTray() }
         },
         SettingsWindow {
             id: settingsWindow
@@ -44,6 +46,33 @@ QtObject {
             overlay: overlayState
             deviceStates: root.deviceStates
             layoutEditor: layoutEditorWindow
+            desktop: desktopState
+        },
+        // Start at login, a second start, permissions (feature 007).
+        DesktopState {
+            id: desktopState
+            onOpenSettings: settingsWindow.open()
+        },
+        // One tray icon per device (feature 007).
+        TrayState {
+            id: trayState
+            onToggleRequested: overlayState.toggleOverlay()
+            onDeviceToggleRequested: deviceId => overlayState.toggleDevice(deviceId, settingsState.deviceIds)
+            onSettingsRequested: deviceId => {
+                settingsWindow.selectedId = deviceId
+                settingsWindow.open()
+            }
+            onRestartRequested: deviceId => {
+                if (root.deviceStates[deviceId])
+                    root.deviceStates[deviceId].restart()
+            }
+            onCompactRequested: (deviceId, compact) => {
+                settingsState.updateDevice(deviceId, "style", compact ? "compact" : "full")
+                settingsState.save()
+                settingsWindow.refresh()
+            }
+            onQuitRequested: Qt.quit()
+            onAvailableChanged: if (!available) overlayState.addNotice("no system tray: use the shortcuts")
         },
         // One layout editor for all devices (feature 005).
         LayoutEditor {
@@ -111,8 +140,24 @@ QtObject {
         deviceStates = map
     }
 
+    // Name, layer and state of every device, for the tray icons.
+    function updateTray() {
+        const list = []
+        for (let i = 0; i < devices.count; i++) {
+            const view = devices.objectAt(i)
+            if (!view || !view.device)
+                continue
+            const d = view.device
+            list.push({ id: view.deviceId, name: d.name || view.deviceId, layer: d.currentLayer,
+                        state: d.stateText || d.status, connected: d.connected, managed: d.mode === "managed",
+                        compact: view.compact })
+        }
+        trayState.update(JSON.stringify(list))
+    }
+
     Component.onCompleted: {
         overlayState.start()
+        desktopState.start()
         settingsState.load()
         syncDevices()
         devices.active = true

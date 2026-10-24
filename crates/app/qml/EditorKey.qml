@@ -14,6 +14,9 @@ Item {
     property var flags: ({})
     property var label
     property bool selected: false
+    /// Held on the device right now, and its tap-hold result (feature 006).
+    property bool pressed: false
+    property string tapHold: ""
     /// Only a single selected key gets resize and rotate handles.
     property bool handles: false
     /// The canvas content item, to map pointer positions into units.
@@ -62,9 +65,9 @@ Item {
         anchors.fill: parent
         anchors.margins: cap.gap
         radius: 6
-        color: cap.flags.overlapping ? "#4a2b2b" : "#2b2d31"
+        color: cap.pressed ? "#3d4048" : cap.flags.overlapping ? "#4a2b2b" : "#2b2d31"
         border.width: cap.selected ? 2 : 1
-        border.color: cap.selected ? "#6aa0ff"
+        border.color: cap.selected || cap.pressed ? "#6aa0ff"
                     : cap.flags.unbound ? "#d2691e"
                     : cap.flags.notInConfig ? "#b8a040"
                     : "#4a4d55"
@@ -94,6 +97,19 @@ Item {
                 color: cap.flags.unbound ? "#d2691e" : cap.flags.notInConfig ? "#b8a040" : "#7a7d85"
                 text: cap.key.kanata ? cap.key.kanata + (cap.flags.notInConfig ? " ∉" : "") : "?"
             }
+        }
+
+        // Tap-hold result.
+        Rectangle {
+            visible: cap.tapHold.length > 0
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.margins: 3
+            width: thBadge.implicitWidth + 6
+            height: thBadge.implicitHeight + 2
+            radius: 3
+            color: cap.tapHold === "hold" ? "#b8860b" : "#2e7d32"
+            Text { id: thBadge; anchors.centerIn: parent; font.pixelSize: 8; font.bold: true; color: "#ffffff"; text: cap.tapHold }
         }
 
         // Duplicate binding.

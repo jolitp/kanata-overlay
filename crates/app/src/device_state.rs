@@ -6,18 +6,21 @@
 //! QObject only through `qt_thread().queue(...)`; Kanata's output reaches QML
 //! through `log_text` only and is never passed to `tracing` (constitution VI).
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
+use kanata_client::live::{Mode, Route, route};
 use kanata_client::protocol::{ClientMessage, ServerMessage};
 use kanata_client::{
-    Client, Incoming, LaunchOptions, Probe, SessionState, Supervisor, SupervisorEvent,
-    SupervisorOptions, launcher, probe,
+    Client, DebugKeyTap, Incoming, KeyAction, KeyEvent, LaunchOptions, Probe, SessionState,
+    Supervisor, SupervisorEvent, SupervisorOptions, launcher, probe,
 };
 use layout::Layout;
 use serde_json::Value;
@@ -59,6 +62,13 @@ pub mod qobject {
         #[qproperty(bool, can_restart)]
         /// Attached, disconnected and a config was given (FR-014 of feature 003).
         #[qproperty(bool, can_start)]
+        /// Held keys (canonical names) as a JSON array (feature 006). Memory only.
+        #[qproperty(QString, pressed_json)]
+        /// Recent tap-hold results: `{canonical: "tap" | "hold"}`.
+        #[qproperty(QString, tap_hold_json)]
+        /// Where presses come from: "debug" (a Kanata we started), "tcp"
+        /// (tap-hold results only) or "off".
+        #[qproperty(QString, press_source)]
         type DeviceState = super::DeviceStateRust;
 
         /// Start with this device's settings (`SettingsState.device(id)`) and
@@ -103,6 +113,31 @@ pub mod qobject {
         /// Ask this device's Kanata to switch layers (handy for testing).
         #[qinvokable]
         fn request_layer(self: Pin<&mut DeviceState>, name: &QString);
+
+        /// Whether anything shows this device's presses (its board, or the
+        /// layout editor on it). Off: presses are dropped and cleared.
+        #[qinvokable]
+        fn set_watching(self: Pin<&mut DeviceState>, on: bool);
+
+        /// Drop expired tap-hold results (QML calls it while some are shown).
+        #[qinvokable]
+        fn tick(self: Pin<&mut DeviceState>);
+
+        /// Press to bind: the next press is sent as `captured` instead of shown.
+        /// False when presses aren't available.
+        #[qinvokable]
+        fn capture(self: Pin<&mut DeviceState>) -> bool;
+
+        #[qinvokable]
+        fn cancel_capture(self: Pin<&mut DeviceState>);
+
+        /// `#rrggbb` for a layer, the same one its tray icon uses (feature 007).
+        #[qinvokable]
+        fn layer_color(self: &DeviceState, layer: &QString) -> QString;
+
+        /// The key pressed after `capture()` (canonical name).
+        #[qsignal]
+        fn captured(self: Pin<&mut DeviceState>, key: QString);
     }
 
     impl cxx_qt::Threading for DeviceState {}
@@ -114,7 +149,57 @@ struct Setup {
     config: Option<PathBuf>,
     layout: Option<PathBuf>,
     address: String,
+    /// Kanata runs with `--debug` for presses (highlight not "off"); changing it
+    /// restarts the session (feature 006, research R5).
+    detailed: bool,
 }
+
+/// Shared with the output reader and connection threads, which filter key
+/// events before anything reaches the Qt thread (research R3).
+#[derive(Debug, Default)]
+struct Live {
+    mode: AtomicU8,
+    watching: AtomicBool,
+    armed: AtomicBool,
+}
+
+impl Live {
+    fn mode(&self) -> Mode {
+        match self.mode.load(Ordering::Relaxed) {
+            1 => Mode::NoTyping,
+            2 => Mode::Off,
+            _ => Mode::All,
+        }
+    }
+
+    fn set_mode(&self, mode: Mode) {
+        let v = match mode {
+            Mode::All => 0,
+            Mode::NoTyping => 1,
+            Mode::Off => 2,
+        };
+        self.mode.store(v, Ordering::Relaxed);
+    }
+
+    fn route(&self, event: KeyEvent) -> Route {
+        route(
+            event,
+            self.armed.load(Ordering::Relaxed),
+            self.watching.load(Ordering::Relaxed),
+            self.mode(),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TapHold {
+    Tap,
+    Hold,
+}
+
+/// How long a tap shows, and a hold when its release can't be seen.
+const TAP_SHOWN: Duration = Duration::from_secs(1);
+const HOLD_SHOWN: Duration = Duration::from_millis(1500);
 
 pub struct DeviceStateRust {
     device_id: QString,
@@ -130,6 +215,9 @@ pub struct DeviceStateRust {
     log_text: QString,
     can_restart: bool,
     can_start: bool,
+    pressed_json: QString,
+    tap_hold_json: QString,
+    press_source: QString,
 
     setup: Setup,
     blocked: Option<String>,
@@ -144,6 +232,10 @@ pub struct DeviceStateRust {
     notice_list: Vec<String>,
     log_refresh_pending: bool,
     connection_started: bool,
+    live: Arc<Live>,
+    /// Keys held now; memory only, no history (constitution VI).
+    held: BTreeSet<String>,
+    tap_hold: BTreeMap<String, (TapHold, Instant)>,
 }
 
 impl Default for DeviceStateRust {
@@ -162,6 +254,9 @@ impl Default for DeviceStateRust {
             log_text: QString::default(),
             can_restart: false,
             can_start: false,
+            pressed_json: QString::from("[]"),
+            tap_hold_json: QString::from("{}"),
+            press_source: QString::from("off"),
             setup: Setup::default(),
             blocked: None,
             check: String::new(),
@@ -173,6 +268,9 @@ impl Default for DeviceStateRust {
             notice_list: Vec::new(),
             log_refresh_pending: false,
             connection_started: false,
+            live: Arc::default(),
+            held: BTreeSet::new(),
+            tap_hold: BTreeMap::new(),
         }
     }
 }
@@ -193,7 +291,8 @@ impl qobject::DeviceState {
             self.as_mut().rust_mut().connection_started = true;
             let address = self.rust().address.clone();
             let config_path = self.rust().config_path.clone();
-            spawn_connection(self.qt_thread(), address, config_path);
+            let live = self.rust().live.clone();
+            spawn_connection(self.qt_thread(), address, config_path, live);
         }
     }
 
@@ -202,9 +301,17 @@ impl qobject::DeviceState {
         if let Some(name) = value.get("name").and_then(Value::as_str) {
             self.as_mut().set_name(QString::from(name));
         }
+        // "All" ↔ "no typing keys" needs no restart; held keys are cleared so
+        // a typing key held across the switch can't stay lit.
+        let mode = mode_of(&value);
+        if mode != self.rust().live.mode() {
+            self.rust().live.set_mode(mode);
+            self.as_mut().clear_live();
+        }
         let setup = setup_of(&value);
         let same_session = setup.config == self.rust().setup.config
             && setup.address == self.rust().setup.address
+            && setup.detailed == self.rust().setup.detailed
             && check.to_string() == self.rust().check;
         if same_session && setup.layout != self.rust().setup.layout {
             self.as_mut().rust_mut().setup.layout = setup.layout;
@@ -281,8 +388,10 @@ impl qobject::DeviceState {
             let mut rust = self.as_mut().rust_mut();
             rust.setup = setup.clone();
             rust.blocked = blocked;
+            rust.live.set_mode(mode_of(&value));
         }
         self.as_mut().set_mode(QString::from("none"));
+        self.as_mut().set_source("off");
         self.as_mut().set_state_text(QString::default());
         self.as_mut().set_can_restart(false);
 
@@ -466,7 +575,110 @@ impl qobject::DeviceState {
         if let Some(s) = self.as_mut().rust_mut().supervisor.take() {
             s.stop();
         }
+        self.rust().live.armed.store(false, Ordering::Relaxed);
+        self.as_mut().clear_live();
         self.as_mut().set_can_restart(false);
+    }
+
+    fn layer_color(&self, layer: &QString) -> QString {
+        QString::from(&crate::layer_color::layer_color_hex(&layer.to_string()))
+    }
+
+    fn set_watching(self: Pin<&mut Self>, on: bool) {
+        self.rust().live.watching.store(on, Ordering::Relaxed);
+        if !on {
+            self.clear_live();
+        }
+    }
+
+    fn capture(self: Pin<&mut Self>) -> bool {
+        let available = self.press_source().to_string() == "debug";
+        self.rust().live.armed.store(available, Ordering::Relaxed);
+        available
+    }
+
+    fn cancel_capture(self: Pin<&mut Self>) {
+        self.rust().live.armed.store(false, Ordering::Relaxed);
+    }
+
+    /// A press or release that passed the filter.
+    fn key_event(mut self: Pin<&mut Self>, event: KeyEvent) {
+        {
+            let mut rust = self.as_mut().rust_mut();
+            match event.action {
+                KeyAction::Press => {
+                    rust.held.insert(event.key);
+                }
+                KeyAction::Release => {
+                    if matches!(rust.tap_hold.get(&event.key), Some((TapHold::Hold, _))) {
+                        rust.tap_hold.remove(&event.key);
+                    }
+                    rust.held.remove(&event.key);
+                }
+                KeyAction::Repeat => {}
+            }
+        }
+        self.publish_live();
+    }
+
+    fn tap_hold_event(mut self: Pin<&mut Self>, key: String, kind: TapHold) {
+        self.as_mut()
+            .rust_mut()
+            .tap_hold
+            .insert(key, (kind, Instant::now()));
+        self.publish_live();
+    }
+
+    fn tick(mut self: Pin<&mut Self>) {
+        let releases_seen = self.press_source().to_string() == "debug";
+        let before = self.rust().tap_hold.len();
+        self.as_mut()
+            .rust_mut()
+            .tap_hold
+            .retain(|_, (kind, since)| match kind {
+                TapHold::Tap => since.elapsed() < TAP_SHOWN,
+                TapHold::Hold => releases_seen || since.elapsed() < HOLD_SHOWN,
+            });
+        if self.rust().tap_hold.len() != before {
+            self.publish_live();
+        }
+    }
+
+    /// Forget every held key and tap-hold result (FR-004).
+    fn clear_live(mut self: Pin<&mut Self>) {
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.held.clear();
+            rust.tap_hold.clear();
+        }
+        self.publish_live();
+    }
+
+    fn publish_live(mut self: Pin<&mut Self>) {
+        let pressed = serde_json::to_string(&self.rust().held).unwrap_or_default();
+        let tap_hold: serde_json::Map<String, Value> = self
+            .rust()
+            .tap_hold
+            .iter()
+            .map(|(k, (kind, _))| {
+                let kind = if *kind == TapHold::Tap { "tap" } else { "hold" };
+                (k.clone(), Value::from(kind))
+            })
+            .collect();
+        let tap_hold = Value::Object(tap_hold).to_string();
+        if *self.pressed_json() != QString::from(&pressed) {
+            self.as_mut().set_pressed_json(QString::from(&pressed));
+        }
+        if *self.tap_hold_json() != QString::from(&tap_hold) {
+            self.as_mut().set_tap_hold_json(QString::from(&tap_hold));
+        }
+    }
+
+    fn set_source(mut self: Pin<&mut Self>, source: &str) {
+        if self.press_source().to_string() != source {
+            self.as_mut().set_press_source(QString::from(source));
+            self.clear_live();
+        }
     }
 
     fn update_can_start(mut self: Pin<&mut Self>) {
@@ -479,6 +691,12 @@ impl qobject::DeviceState {
 
     /// A Kanata answered on the configured address: use it, never stop it.
     fn attach(mut self: Pin<&mut Self>) {
+        let source = if self.rust().live.mode() == Mode::Off {
+            "off"
+        } else {
+            "tcp"
+        };
+        self.as_mut().set_source(source);
         self.as_mut().set_mode(QString::from("attached"));
         self.as_mut().set_state_text(QString::from("attached"));
         self.as_mut().set_can_restart(false);
@@ -494,8 +712,39 @@ impl qobject::DeviceState {
         if let Some(bin) = &self.rust().kanata_bin {
             opts.kanata_bin = bin.clone();
         }
+        let mut timings = SupervisorOptions::default();
+        let detailed = self.rust().setup.detailed;
+        if detailed {
+            // Presses come from Kanata's debug output (research R1); the tap
+            // swallows every debug line, so none reaches the log (VI).
+            opts.extra_args.push("--debug".into());
+            let live = self.rust().live.clone();
+            let qt = self.qt_thread();
+            timings.tap = Some(Arc::new(DebugKeyTap::new(move |event| {
+                match live.route(event) {
+                    Route::Capture(key) => {
+                        live.armed.store(false, Ordering::Relaxed);
+                        let _ = qt.queue(move |o| o.captured(QString::from(&key)));
+                    }
+                    Route::Show(event) => {
+                        let read = Instant::now();
+                        let _ = qt.queue(move |o| {
+                            o.key_event(event);
+                            // Timing only, never the key (VI).
+                            tracing::trace!(
+                                "key event shown {:?} after it was read",
+                                read.elapsed()
+                            );
+                        });
+                    }
+                    Route::Drop => {}
+                }
+            })));
+        }
+        self.as_mut()
+            .set_source(if detailed { "debug" } else { "off" });
         let qt = self.qt_thread();
-        let supervisor = Supervisor::start(opts, SupervisorOptions::default(), move |event| {
+        let supervisor = Supervisor::start(opts, timings, move |event| {
             let _ = qt.queue(move |o| o.on_event(event));
         });
         self.as_mut().rust_mut().supervisor = Some(supervisor);
@@ -508,6 +757,9 @@ impl qobject::DeviceState {
         match event {
             SupervisorEvent::State(state) => {
                 tracing::debug!("kanata ({}): {}", self.device_id(), state_text(&state));
+                if state != SessionState::Running {
+                    self.as_mut().clear_live();
+                }
                 self.as_mut()
                     .set_state_text(QString::from(&state_text(&state)));
             }
@@ -570,8 +822,18 @@ impl qobject::DeviceState {
     }
 }
 
+/// The device's highlight setting (feature 006); missing means "all".
+fn mode_of(device: &Value) -> Mode {
+    match device.get("highlight").and_then(Value::as_str) {
+        Some("no-typing") => Mode::NoTyping,
+        Some("off") => Mode::Off,
+        _ => Mode::All,
+    }
+}
+
 fn setup_of(device: &Value) -> Setup {
     Setup {
+        detailed: mode_of(device) != Mode::Off,
         config: path_field(device, "config"),
         layout: path_field(device, "layout"),
         address: device
@@ -636,6 +898,7 @@ fn spawn_connection(
     qt: cxx_qt::CxxQtThread<qobject::DeviceState>,
     shared_address: Arc<Mutex<String>>,
     config_path: Arc<Mutex<Option<PathBuf>>>,
+    live: Arc<Live>,
 ) {
     thread::spawn(move || {
         // false means the QObject is gone (device removed or app quitting).
@@ -691,8 +954,16 @@ fn spawn_connection(
                                     push(reload_config(path, &new));
                                 }
                             }
-                            // Only the kind: some messages (HoldActivated, TapActivated)
-                            // carry pressed-key names, which must not be logged (VI).
+                            // Tap-hold results (feature 006): filtered like presses;
+                            // the key name is never logged (VI).
+                            Ok(Incoming::Message(ServerMessage::TapActivated { key })) => {
+                                tap_hold_result(&live, &push, &key, TapHold::Tap);
+                            }
+                            Ok(Incoming::Message(ServerMessage::HoldActivated { key })) => {
+                                tap_hold_result(&live, &push, &key, TapHold::Hold);
+                            }
+                            // Only the kind: some messages carry pressed-key names,
+                            // which must not be logged (VI).
                             Ok(Incoming::Message(other)) => {
                                 tracing::debug!("kanata: {} message", message_kind(&other));
                             }
@@ -704,6 +975,7 @@ fn spawn_connection(
                         }
                     }
                     let alive = push(Box::new(|mut o| {
+                        o.as_mut().clear_live();
                         o.as_mut().set_connected(false);
                         o.as_mut().set_status(QString::from("disconnected"));
                         o.as_mut().relabel();
@@ -718,6 +990,24 @@ fn spawn_connection(
             thread::sleep(Duration::from_secs(1));
         }
     });
+}
+
+/// Show a tap-hold result if the device's filter lets it through.
+fn tap_hold_result(live: &Live, push: &impl Fn(Update) -> bool, key: &str, kind: TapHold) {
+    let event = KeyEvent {
+        key: kbd::canonical(key),
+        action: KeyAction::Press,
+    };
+    // Never captured: press to bind waits for a real press.
+    let routed = route(
+        event,
+        false,
+        live.watching.load(Ordering::Relaxed),
+        live.mode(),
+    );
+    if let Route::Show(event) = routed {
+        push(Box::new(move |o| o.tap_hold_event(event.key, kind)));
+    }
 }
 
 /// Re-read the config after Kanata (re)connected or reloaded (feature 002).

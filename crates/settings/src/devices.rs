@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{Appearance, Device, Overrides, Settings};
+use crate::{Appearance, Device, Highlight, Overrides, Settings, Style};
 
 /// Device *i* talks to its Kanata here unless it sets `address` (research R4).
 pub fn default_address(index: usize) -> String {
@@ -60,6 +60,8 @@ impl Settings {
                 layout: cli_layout.map(Path::to_path_buf),
                 address: None,
                 appearance: cli.effective(&Appearance::default()),
+                highlight: Highlight::All,
+                style: Style::Full,
             }],
             [only] => {
                 let mut d = only.clone();
@@ -94,6 +96,8 @@ impl Settings {
             layout: None,
             address: None,
             appearance: Appearance::default(),
+            highlight: Highlight::All,
+            style: Style::Full,
         });
         id
     }

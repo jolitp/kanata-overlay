@@ -45,7 +45,7 @@ impl Failure {
                 format!("Kanata is not installed or not on PATH ({program})")
             }
             Failure::InvalidConfig { summary } => format!("Kanata config error: {summary}"),
-            Failure::Permissions => "Kanata may not read the keyboard or create its virtual keyboard: see README › Running Kanata without root".to_owned(),
+            Failure::Permissions => "Kanata may not read the keyboard or create its virtual keyboard: see Settings › Permissions".to_owned(),
             Failure::PortInUse { port } => format!("port {port} is in use"),
             Failure::NoAnswer => "Kanata did not answer within 10 s".to_owned(),
             Failure::NoDevice => "waiting for its device (not connected)".to_owned(),

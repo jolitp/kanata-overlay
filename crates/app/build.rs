@@ -26,6 +26,8 @@ fn main() {
             "src/settings_state.rs",
             "src/device_state.rs",
             "src/layout_editor.rs",
+            "src/tray_state.rs",
+            "src/desktop_state.rs",
             "src/global_shortcut.rs",
             "src/platform.rs",
         ])
