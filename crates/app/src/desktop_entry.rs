@@ -110,10 +110,34 @@ pub fn install(data_home: &Path, exec: &Path) -> io::Result<()> {
         &hicolor.join("scalable/apps").join(format!("{APP_ID}.svg")),
         ICON,
     )? {
-        // Icon caches (GTK's icon-theme.cache, Plasma's) trust themselves while
-        // the theme folder looks unchanged; a new file in a subfolder doesn't
-        // change it. Touch the folder so they look again.
-        let marker = hicolor.join(format!(".{APP_ID}.touch"));
+        // Icon caches trust themselves while their folders look unchanged. An
+        // `icon-theme.cache` left by another app (e.g. Lutris) lists only its
+        // own folders, and Qt then never looks in `scalable/apps` at all: the
+        // icon shows as blank. Touching every folder of the theme makes such a
+        // cache count as stale, so lookups scan the folders instead.
+        touch_theme_dirs(&hicolor)?;
+    }
+    Ok(())
+}
+
+/// Bump the modification time of `dir` and every folder below it (two
+/// levels: `<size>/<context>`), by creating and removing a marker file.
+fn touch_theme_dirs(dir: &Path) -> io::Result<()> {
+    let mut dirs = vec![dir.to_path_buf()];
+    for size in std::fs::read_dir(dir)?
+        .flatten()
+        .filter(|e| e.path().is_dir())
+    {
+        dirs.push(size.path());
+        for ctx in std::fs::read_dir(size.path())?
+            .flatten()
+            .filter(|e| e.path().is_dir())
+        {
+            dirs.push(ctx.path());
+        }
+    }
+    for d in dirs {
+        let marker = d.join(format!(".{APP_ID}.touch"));
         std::fs::write(&marker, b"")?;
         std::fs::remove_file(&marker)?;
     }
