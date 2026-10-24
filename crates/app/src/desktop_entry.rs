@@ -105,12 +105,18 @@ pub fn install(data_home: &Path, exec: &Path) -> io::Result<()> {
             .join(format!("{APP_ID}.desktop")),
         &desktop_entry(exec),
     )?;
-    write_if_changed(
-        &data_home
-            .join("icons/hicolor/scalable/apps")
-            .join(format!("{APP_ID}.svg")),
+    let hicolor = data_home.join("icons/hicolor");
+    if write_if_changed(
+        &hicolor.join("scalable/apps").join(format!("{APP_ID}.svg")),
         ICON,
-    )?;
+    )? {
+        // Icon caches (GTK's icon-theme.cache, Plasma's) trust themselves while
+        // the theme folder looks unchanged; a new file in a subfolder doesn't
+        // change it. Touch the folder so they look again.
+        let marker = hicolor.join(format!(".{APP_ID}.touch"));
+        std::fs::write(&marker, b"")?;
+        std::fs::remove_file(&marker)?;
+    }
     Ok(())
 }
 
