@@ -13,6 +13,11 @@ QtObject {
     required property var overlay
     /// The first board also shows the global notices.
     property bool first: false
+    /// The layout editor's device, "" when closed (feature 006: it shows presses too).
+    property string editedId: ""
+    // Presses are read only while something shows them (FR-004).
+    readonly property bool watched: overlay.overlayVisible || editedId === deviceId
+    onWatchedChanged: deviceState.setWatching(watched)
     property Window window
     readonly property var device: deviceState
 
@@ -38,6 +43,7 @@ QtObject {
 
     Component.onCompleted: {
         deviceState.start(settings.device(deviceId), settings.deviceCheck(deviceId))
+        deviceState.setWatching(watched)
         const variant = Qt.createComponent(overlay.useLayerShell ? "LayerShellOverlay.qml" : "FallbackOverlay.qml")
         window = variant.createObject(view, {
             device: deviceState,

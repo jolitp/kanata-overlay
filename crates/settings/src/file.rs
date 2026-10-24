@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 
 use crate::{
-    Appearance, Device, Field, MARGIN_RANGE, OPACITY_RANGE, SCALE_RANGE, Settings, VERSION,
-    in_range,
+    Appearance, Device, Field, Highlight, MARGIN_RANGE, OPACITY_RANGE, SCALE_RANGE, Settings,
+    VERSION, in_range,
 };
 
 /// Something the user should know about the settings file.
@@ -161,6 +161,7 @@ pub(crate) fn parse(text: &str) -> LoadOutcome {
             layout: None,
             address: None,
             appearance: parse_appearance(&object, "", &mut warnings),
+            highlight: Highlight::All,
         }],
         None => Vec::new(),
     };
@@ -208,6 +209,17 @@ fn parse_device(
         .filter(|s| !s.is_empty())
         .map(str::to_owned);
     let prefix = format!("devices[{}].", index + 1);
+    // Missing → all keys; anything else unknown → all keys, with a warning.
+    let highlight = match object.get("highlight") {
+        None | Some(Value::Null) => Highlight::All,
+        Some(v) => v.as_str().and_then(Highlight::parse).unwrap_or_else(|| {
+            warnings.push(SettingsWarning::InvalidField {
+                field: format!("{prefix}highlight"),
+                reason: "not \"all\", \"no-typing\" or \"off\"".to_owned(),
+            });
+            Highlight::All
+        }),
+    };
     Ok(Device {
         appearance: parse_appearance(object, &prefix, warnings),
         id,
@@ -215,6 +227,7 @@ fn parse_device(
         config: path("config"),
         layout: path("layout"),
         address,
+        highlight,
     })
 }
 
@@ -322,6 +335,7 @@ fn device_json(d: &Device) -> Value {
         "opacity": d.appearance.opacity,
         "scale": d.appearance.scale,
         "screen": d.appearance.screen,
+        "highlight": d.highlight.as_str(),
     })
 }
 
@@ -368,6 +382,7 @@ mod tests {
             layout: None,
             address: None,
             appearance,
+            highlight: Highlight::All,
         }
     }
 
@@ -396,6 +411,7 @@ mod tests {
                 Device {
                     address: Some("127.0.0.1:7171".into()),
                     layout: Some("/k/mouse.json".into()),
+                    highlight: Highlight::NoTyping,
                     ..device(
                         "mouse",
                         Appearance {
@@ -556,5 +572,26 @@ mod tests {
             layouts_dir(Path::new("/c/kanata-overlay/settings.json")),
             PathBuf::from("/c/kanata-overlay/layouts")
         );
+    }
+
+    #[test]
+    fn highlight_setting() {
+        let dir = std::env::temp_dir().join(format!("settings-highlight-{}", std::process::id()));
+        let file = dir.join("settings.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &file,
+            r#"{"version": 2, "devices": [
+                {"id": "a", "name": "A"},
+                {"id": "b", "name": "B", "highlight": "off"},
+                {"id": "c", "name": "C", "highlight": "bogus"}]}"#,
+        )
+        .unwrap();
+        let out = load(&file);
+        let h: Vec<Highlight> = out.settings.devices.iter().map(|d| d.highlight).collect();
+        assert_eq!(h, [Highlight::All, Highlight::Off, Highlight::All]);
+        assert!(out.warnings.iter().any(|w| matches!(w,
+            SettingsWarning::InvalidField { field, .. } if field == "devices[3].highlight")));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

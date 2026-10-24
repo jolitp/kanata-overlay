@@ -32,6 +32,7 @@ QtObject {
             delegate: DeviceView {
                 required property int index
                 first: index === 0
+                editedId: layoutEditor.deviceId
                 settings: settingsState
                 overlay: overlayState
             }

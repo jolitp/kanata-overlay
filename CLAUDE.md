@@ -6,6 +6,7 @@ Project principles: `.specify/memory/constitution.md` (read before planning).
 ## Layout
 
 - `crates/kanata-client` — Kanata TCP client (`Client`, `Incoming`), launcher (`LaunchOptions`, parent-death signal) and `Supervisor` (check, start, restart with backoff, stop). No Qt.
+  - `src/output_tap.rs` — key presses from a managed Kanata's `--debug` output (an unstable interface, behind `OutputTap`). `DebugKeyTap` swallows every `[DEBUG]`/`[TRACE]` line, so none reaches the supervisor log or the log window. `src/live.rs` — the filter (`route`): press to bind, watching, highlight mode; it runs on the reader thread, before the Qt thread.
 - `crates/layout` — physical layouts: KLE import, own JSON format, legend → Kanata key-name guessing. No Qt.
   - `src/edit.rs` — the layout editor's model: `Editor` (selection, snapshot undo, move/resize/rotate around each key's own centre, add/delete/bind), `diagnose` (unbound, duplicate, not in config, overlapping) and the save rules (`save_target`, `write_atomic`, `FileStamp`).
 - `crates/settings` — overlay settings file, CLI overrides, placement maths. No Qt.
@@ -33,6 +34,6 @@ Project principles: `.specify/memory/constitution.md` (read before planning).
 - Never re-define Kanata protocol types; use `kanata_client::protocol`.
 - Spawn Kanata only on the `kanata-supervisor` thread: `PR_SET_PDEATHSIG` fires when the *spawning thread* exits. Kanata's output stays in the supervisor's in-memory log, never `tracing`.
 - Agent smoke tests use `crates/kanata-client/tests/fake-kanata.sh` (`--kanata`) or `just fake-kanata`, never real Kanata (it grabs the keyboard).
-- Never log or persist pressed-key data (constitution VI). Some Kanata messages (`HoldActivated`, `TapActivated`) carry key names: log only the message kind.
+- Never log or persist pressed-key data (constitution VI). `KeyEvent`'s `Debug` hides the key; log timings or kinds, never names. Held keys live only in `DeviceState` and are cleared on hide, stop, disconnect and mode change. Some Kanata messages (`HoldActivated`, `TapActivated`) carry key names: log only the message kind.
 - QML root is a `QtObject`, not an `Item`: since Qt 6.7 a `Window` inside an `Item` becomes a child window and never shows.
 - Qt logs go to journald unless `QT_FORCE_STDERR_LOGGING=1`; build before `timeout … cargo run`, or the timeout kills the compile.

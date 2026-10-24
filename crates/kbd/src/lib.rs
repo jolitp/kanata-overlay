@@ -252,9 +252,75 @@ pub fn is_key_name(name: &str) -> bool {
         .is_ok()
 }
 
+/// Keys a password is made of (feature 006, research R8): hidden under the
+/// "no typing keys" highlight setting.
+pub fn is_typing_key(canonical: &str) -> bool {
+    const OTHERS: &[&str] = &[
+        "KEY_MINUS",
+        "KEY_EQUAL",
+        "KEY_LEFTBRACE",
+        "KEY_RIGHTBRACE",
+        "KEY_BACKSLASH",
+        "KEY_SEMICOLON",
+        "KEY_APOSTROPHE",
+        "KEY_GRAVE",
+        "KEY_COMMA",
+        "KEY_DOT",
+        "KEY_SLASH",
+        "KEY_SPACE",
+        "KEY_102ND",
+        "KEY_KPDOT",
+    ];
+    let single = |prefix: &str, ok: fn(char) -> bool| {
+        canonical
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.chars().count() == 1 && rest.chars().all(ok))
+    };
+    single("KEY_", |c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        || single("KEY_KP", |c| c.is_ascii_digit())
+        || OTHERS.contains(&canonical)
+}
+
+/// The spelling to show or write for a canonical key: plain text first, then
+/// the shortest (`KEY_ENTER` → `ent`).
+pub fn preferred_name(canonical: &str) -> Option<&'static str> {
+    key_names()
+        .filter(|(_, c)| *c == canonical)
+        .map(|(n, _)| n)
+        .min_by_key(|n| (!n.is_ascii(), n.chars().count(), *n))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typing_keys_and_preferred_names() {
+        for k in [
+            "KEY_A",
+            "KEY_Z",
+            "KEY_0",
+            "KEY_SPACE",
+            "KEY_KP5",
+            "KEY_SLASH",
+        ] {
+            assert!(is_typing_key(k), "{k}");
+        }
+        for k in [
+            "KEY_LEFTSHIFT",
+            "KEY_ESC",
+            "KEY_UP",
+            "KEY_F1",
+            "BTN_SIDE",
+            "KEY_KPENTER",
+            "KEY_F10",
+        ] {
+            assert!(!is_typing_key(k), "{k}");
+        }
+        assert_eq!(preferred_name("KEY_ENTER"), Some("ent"));
+        assert_eq!(preferred_name("KEY_A"), Some("a"));
+        assert_eq!(preferred_name("NOPE"), None);
+    }
 
     #[test]
     fn key_name_table() {

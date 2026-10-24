@@ -19,6 +19,36 @@ ApplicationWindow {
     readonly property var flags: JSON.parse(editor.flagsJson || '{"keys": [], "counts": {}}')
     readonly property var selection: JSON.parse(editor.selectionJson || "[]")
     readonly property var labels: device ? JSON.parse(device.labelsJson) : ({})
+    // Held keys and tap-hold results of the edited device (feature 006).
+    readonly property var pressedKeys: device ? JSON.parse(device.pressedJson || "[]") : []
+    readonly property var tapHolds: device ? JSON.parse(device.tapHoldJson || "{}") : ({})
+
+    // ── press to bind (feature 006) ──
+    property int captureLeft: 0 // seconds left; 0 = not waiting
+    readonly property bool canCapture: !!device && device.pressSource === "debug" && !!single
+    function startCapture() {
+        if (canCapture && device.capture())
+            captureLeft = 10
+    }
+    function stopCapture() {
+        if (captureLeft > 0 && device)
+            device.cancelCapture()
+        captureLeft = 0
+    }
+    Timer {
+        interval: 1000
+        repeat: true
+        running: win.captureLeft > 0
+        onTriggered: if (--win.captureLeft === 0 && win.device) win.device.cancelCapture()
+    }
+    Connections {
+        target: win.device
+        function onCaptured(key) {
+            win.captureLeft = 0
+            win.editor.bind(win.editor.nameFor(key))
+        }
+    }
+    onSelectionChanged: stopCapture()
     readonly property var single: selection.length === 1 ? layout.keys[selection[0]] : null
     property real unit: 54
     readonly property real minUnit: 15
@@ -87,6 +117,7 @@ ApplicationWindow {
     }
 
     function endSession() {
+        stopCapture()
         if (device)
             device.endPreview()
         editor.close()
@@ -198,7 +229,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+A"; enabled: !win.typing; onActivated: win.editor.selectAll() }
     Shortcut { sequence: "Ctrl+D"; enabled: !win.typing; onActivated: win.editor.duplicateSelection() }
     Shortcut { sequences: ["Delete", "Backspace"]; enabled: !win.typing; onActivated: win.editor.deleteSelection() }
-    Shortcut { sequence: "Escape"; enabled: !win.typing; onActivated: win.editor.selectNone() }
+    Shortcut { sequence: "Escape"; enabled: !win.typing; onActivated: win.captureLeft > 0 ? win.stopCapture() : win.editor.selectNone() }
     readonly property real step: editor.snapUnit > 0 ? editor.snapUnit : 0.25
     Shortcut { sequence: "Left"; enabled: !win.typing; onActivated: win.nudge(-win.step, 0) }
     Shortcut { sequence: "Right"; enabled: !win.typing; onActivated: win.nudge(win.step, 0) }
@@ -222,6 +253,9 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 6
             ComboBox {
+                // Focus by Tab only: after a click, typing on the keyboard must not
+                // pick another option (letters jump to matching entries).
+                focusPolicy: Qt.TabFocus
                 id: deviceBox
                 Layout.preferredWidth: 180
                 readonly property var ids: { void win.settings.revision; return JSON.parse(win.settings.deviceIds || "[]") }
@@ -390,6 +424,7 @@ ApplicationWindow {
                     return Qt.point(p.x / win.unit, p.y / win.unit)
                 }
                 onPressed: mouse => {
+                    win.stopCapture()
                     if (mouse.button !== Qt.LeftButton) {
                         mode = "pan"
                         panFrom = area.mapToItem(canvas, mouse.x, mouse.y)
@@ -506,6 +541,8 @@ ApplicationWindow {
                         flags: (win.flags.keys || [])[index] || ({})
                         label: modelData.kanataCanonical ? win.labels[modelData.kanataCanonical] : undefined
                         selected: isSelected
+                        pressed: !!modelData.kanataCanonical && win.pressedKeys.includes(modelData.kanataCanonical)
+                        tapHold: (modelData.kanataCanonical && win.tapHolds[modelData.kanataCanonical]) || ""
                         handles: isSelected && win.selection.length === 1
                         moveX: isSelected ? win.moveX : 0
                         moveY: isSelected ? win.moveY : 0
@@ -649,6 +686,26 @@ ApplicationWindow {
                             text: qsTr("Clear")
                             enabled: !!(win.single && win.single.kanata)
                             onClicked: win.editor.bind("")
+                        }
+                    }
+                    Item { width: 1; height: 1 }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+                        Button {
+                            Layout.fillWidth: true
+                            enabled: win.canCapture
+                            highlighted: win.captureLeft > 0
+                            text: win.captureLeft > 0 ? qsTr("Press a key… (%1 s)").arg(win.captureLeft) : qsTr("Press to bind")
+                            onClicked: win.captureLeft > 0 ? win.stopCapture() : win.startCapture()
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: !!win.single && !win.canCapture
+                            wrapMode: Text.Wrap
+                            font.pixelSize: 11
+                            color: palette.placeholderText
+                            text: qsTr("Needs a Kanata started by the overlay, with highlighting on.")
                         }
                     }
 

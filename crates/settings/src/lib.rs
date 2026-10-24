@@ -145,6 +145,36 @@ impl Default for Appearance {
     }
 }
 
+/// Which pressed keys a device's board shows (feature 006).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Highlight {
+    #[default]
+    All,
+    /// Everything but letters, digits and symbol keys.
+    NoTyping,
+    /// No presses are read at all.
+    Off,
+}
+
+impl Highlight {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Highlight::All => "all",
+            Highlight::NoTyping => "no-typing",
+            Highlight::Off => "off",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "all" => Some(Highlight::All),
+            "no-typing" => Some(Highlight::NoTyping),
+            "off" => Some(Highlight::Off),
+            _ => None,
+        }
+    }
+}
+
 /// A device the overlay shows, with its own Kanata and board.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
@@ -159,6 +189,7 @@ pub struct Device {
     /// `host:port` of its Kanata; `None` → [`default_address`] by position.
     pub address: Option<String>,
     pub appearance: Appearance,
+    pub highlight: Highlight,
 }
 
 /// The persisted settings: the device list.

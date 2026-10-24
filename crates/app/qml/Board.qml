@@ -17,6 +17,17 @@ Item {
     // Labels for the active layer, keyed by canonical Kanata key name; {} without a config.
     readonly property var labels: JSON.parse(device.labelsJson)
     readonly property bool hasConfig: Object.keys(labels).length > 0
+    // Held keys and tap-hold results (feature 006), by canonical key name.
+    readonly property var pressed: JSON.parse(device.pressedJson || "[]")
+    readonly property var tapHold: JSON.parse(device.tapHoldJson || "{}")
+
+    // Tap-hold results expire in Rust; ask it to check while any is shown.
+    Timer {
+        interval: 100
+        repeat: true
+        running: board.device.tapHoldJson !== "{}"
+        onTriggered: board.device.tick()
+    }
     readonly property var bounds: {
         // Bounding box of all key corners, after KLE rotation around (rx, ry).
         // Keys may sit left of or above 0 while the layout editor previews.
@@ -101,6 +112,8 @@ Item {
                 unit: board.unit
                 label: modelData.kanataCanonical ? board.labels[modelData.kanataCanonical] : undefined
                 hasConfig: board.hasConfig
+                pressed: !!modelData.kanataCanonical && board.pressed.includes(modelData.kanataCanonical)
+                tapHold: (modelData.kanataCanonical && board.tapHold[modelData.kanataCanonical]) || ""
             }
         }
     }

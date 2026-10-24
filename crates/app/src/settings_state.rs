@@ -184,6 +184,7 @@ impl qobject::SettingsState {
             "opacity": f64::from(d.appearance.opacity) / 100.0,
             "scale": d.appearance.scale,
             "screen": d.appearance.screen.clone().unwrap_or_default(),
+            "highlight": d.highlight.as_str(),
             "index": index,
         });
         QString::from(&json.to_string())
@@ -249,6 +250,13 @@ impl qobject::SettingsState {
                 }
                 "address" => {
                     d.address = (!value.trim().is_empty()).then(|| value.trim().to_owned());
+                    None
+                }
+                "highlight" => {
+                    let Some(h) = settings::Highlight::parse(&value) else {
+                        return;
+                    };
+                    d.highlight = h;
                     None
                 }
                 "edge" => {

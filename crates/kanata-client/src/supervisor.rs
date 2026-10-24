@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use crate::backoff::{Backoff, Next};
 use crate::failure::{self, Failure, strip_ansi};
 use crate::launcher::{self, LaunchOptions};
+use crate::output_tap::OutputTap;
 use crate::probe::{Probe, probe};
 
 /// Lines of Kanata output kept in memory ("at least the last 500", FR-010).
@@ -65,6 +66,9 @@ pub struct SupervisorOptions {
     pub stop_grace: Duration,
     /// Retry a Kanata whose devices are missing this often (or when one appears).
     pub device_retry: Duration,
+    /// Offered every output line before it is logged (feature 006); the caller
+    /// adds `--debug` to the launch options when it sets one.
+    pub tap: Option<Arc<dyn OutputTap>>,
 }
 
 impl Default for SupervisorOptions {
@@ -74,6 +78,7 @@ impl Default for SupervisorOptions {
             backoff_unit: Duration::from_secs(1),
             stop_grace: Duration::from_millis(1500),
             device_retry: Duration::from_secs(10),
+            tap: None,
         }
     }
 }
@@ -416,9 +421,14 @@ impl Run {
         for stream in streams.into_iter().flatten() {
             let log = self.log.clone();
             let emit = self.emit.clone();
+            let tap = self.timings.tap.clone();
             thread::spawn(move || {
                 for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                    push(&log, std::iter::once(strip_ansi(&line)));
+                    let line = strip_ansi(&line);
+                    if tap.as_ref().is_some_and(|t| t.line(&line)) {
+                        continue;
+                    }
+                    push(&log, std::iter::once(line));
                     emit(SupervisorEvent::LogChanged);
                 }
             });

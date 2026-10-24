@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use kanata_client::launcher::{self, LaunchOptions, terminate, with_parent_death_signal};
 use kanata_client::{
-    Failure, Probe, SessionState, Supervisor, SupervisorEvent, SupervisorOptions, probe,
+    DebugKeyTap, Failure, KeyAction, Probe, SessionState, Supervisor, SupervisorEvent,
+    SupervisorOptions, probe,
 };
 
 fn fake() -> PathBuf {
@@ -28,6 +29,7 @@ fn quick() -> SupervisorOptions {
         backoff_unit: Duration::from_millis(100),
         stop_grace: Duration::from_millis(500),
         device_retry: Duration::from_millis(200),
+        tap: None,
     }
 }
 
@@ -341,4 +343,55 @@ fn attaches_when_another_kanata_wins_the_port() {
     assert_eq!(e, SupervisorEvent::Attach(addr));
     sup.stop();
     terminate(&mut other, Duration::from_millis(500)).unwrap();
+}
+
+// ── debug output tap (feature 006) ───────────────────────────────────────
+
+#[test]
+fn tap_gets_key_events_and_the_log_gets_no_debug_lines() {
+    let mut opts = LaunchOptions::new("/dev/null", launcher::free_port().unwrap());
+    opts.kanata_bin = fake();
+    opts.extra_args.push("--debug".into());
+    // Only read with --debug, which no other test passes.
+    // SAFETY: see `supervise`.
+    unsafe { std::env::set_var("FAKE_KEYS", "KEY_CAPSLOCK:Press KEY_A:Press KEY_A:Release") };
+    let (keys_tx, keys) = mpsc::channel();
+    let tap = DebugKeyTap::new(move |e| {
+        let _ = keys_tx.send((e.key, e.action));
+    });
+    let timings = SupervisorOptions {
+        tap: Some(std::sync::Arc::new(tap)),
+        ..quick()
+    };
+    let (tx, rx) = mpsc::channel();
+    let sup = Supervisor::start(opts, timings, move |e| {
+        let _ = tx.send(e);
+    });
+    expect(&rx, Duration::from_secs(5), state(SessionState::Running));
+    let got: Vec<(String, KeyAction)> = (0..3)
+        .map(|_| {
+            keys.recv_timeout(Duration::from_secs(3))
+                .expect("a key event")
+        })
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("KEY_CAPSLOCK".to_owned(), KeyAction::Press),
+            ("KEY_A".to_owned(), KeyAction::Press),
+            ("KEY_A".to_owned(), KeyAction::Release),
+        ]
+    );
+    thread::sleep(Duration::from_millis(300)); // a full round, with the non-key line
+    let log = sup.log();
+    assert!(
+        log.iter().any(|l| l.contains("fake kanata ready")),
+        "{log:?}"
+    );
+    assert!(
+        !log.iter()
+            .any(|l| l.contains("[DEBUG]") || l.contains("KEY_")),
+        "no debug line or key name in the log"
+    );
+    sup.stop();
 }

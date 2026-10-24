@@ -78,6 +78,7 @@ ApplicationWindow {
         opacitySlider.value = Math.round((cfg.opacity || 0) * 100)
         scaleSlider.value = cfg.scale || 100
         monitorBox.currentIndex = Math.max(0, monitorBox.indexOfValue(cfg.screen))
+        highlightBox.currentIndex = Math.max(0, highlightBox.indexOfValue(cfg.highlight || "all"))
     }
 
     onSelectedIdChanged: refresh()
@@ -120,6 +121,9 @@ ApplicationWindow {
         Label { text: qsTr("Device") }
         RowLayout {
             ComboBox {
+                // Focus by Tab only: after a click, typing on the keyboard must not
+                // pick another option (letters jump to matching entries).
+                focusPolicy: Qt.TabFocus
                 id: deviceBox
                 Layout.fillWidth: true
                 model: win.deviceList
@@ -198,6 +202,9 @@ ApplicationWindow {
         Label { text: qsTr("Position") }
         RowLayout {
             ComboBox {
+                // Focus by Tab only: after a click, typing on the keyboard must not
+                // pick another option (letters jump to matching entries).
+                focusPolicy: Qt.TabFocus
                 id: edgeBox
                 Layout.fillWidth: true
                 model: win.edges
@@ -252,12 +259,45 @@ ApplicationWindow {
 
         Label { text: qsTr("Monitor") }
         ComboBox {
+            // Focus by Tab only: after a click, typing on the keyboard must not
+            // pick another option (letters jump to matching entries).
+            focusPolicy: Qt.TabFocus
             id: monitorBox
             Layout.fillWidth: true
             model: win.monitors
             textRole: "text"
             valueRole: "value"
             onActivated: { win.update("screen", currentValue); win.settings.save() }
+        }
+
+        // Pressed keys on the board (feature 006). "No typing keys" never shows
+        // letters, digits or symbols, e.g. while screen sharing.
+        Label { text: qsTr("Highlight") }
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 2
+            ComboBox {
+                // Focus by Tab only: after a click, typing on the keyboard must not
+                // pick another option (letters jump to matching entries).
+                focusPolicy: Qt.TabFocus
+                id: highlightBox
+                Layout.fillWidth: true
+                model: [
+                    { value: "all", text: qsTr("All keys") },
+                    { value: "no-typing", text: qsTr("No typing keys") },
+                    { value: "off", text: qsTr("Off") }
+                ]
+                textRole: "text"
+                valueRole: "value"
+                onActivated: { win.update("highlight", currentValue); win.settings.save() }
+            }
+            Label {
+                Layout.fillWidth: true
+                visible: !!win.kanata && win.kanata.pressSource === "tcp"
+                wrapMode: Text.Wrap
+                color: palette.placeholderText
+                text: qsTr("Pressed keys: only for a Kanata started by the overlay. Tap and hold still show.")
+            }
         }
 
         Label { text: qsTr("Kanata") }

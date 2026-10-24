@@ -184,6 +184,22 @@ keys.
 
 The editor never touches the Kanata config and reads no key presses.
 
+### Live key highlighting
+
+While a device's Kanata runs, its board lights the keys you hold, and a tap-hold key
+briefly shows **tap** (green) or **hold** (yellow) when Kanata decides.
+
+- **Highlight** (settings window, per device): *All keys* (default); *No typing keys*:
+  letters, digits, symbols and space never light, which is safer while screen sharing;
+  *Off*: no presses are read at all.
+- Pressed keys come from a Kanata the overlay started (it runs with `--debug`; none of
+  that output reaches the log window). For a Kanata you started yourself, only tap and
+  hold show.
+- **Press to bind** in the layout editor: select a key, click it, press the key on the
+  device; Esc or 10 seconds cancels. The key still does what it normally does.
+- Key presses stay in memory: they are never written to a file, a log or the settings,
+  and there is no history.
+
 ## Running Kanata without root
 
 Kanata needs to read `/dev/input/event*` and write `/dev/uinput`. Grant that to your
@@ -257,7 +273,8 @@ Suggested order for the first Spec Kit features:
 5. ~~**Layout editor**~~ ✅ done in [`specs/005-layout-editor`](specs/005-layout-editor/spec.md):
    bind unbound keys, move/resize/rotate/add/delete keys, save layouts (press-to-bind
    comes with item 6).
-6. **Live key highlighting**: tap-hold events from the TCP protocol
+6. ~~**Live key highlighting**~~ ✅ done in [`specs/006-live-key-highlighting`](specs/006-live-key-highlighting/spec.md):
+   held keys, tap/hold results, press to bind. Originally: tap-hold events from the TCP protocol
    (`HoldActivated`/`TapActivated`), evdev on Kanata's output device, optional
    `--debug` output parsing.
 7. **Desktop integration**: tray icon, autostart, permissions setup through `pkexec`.

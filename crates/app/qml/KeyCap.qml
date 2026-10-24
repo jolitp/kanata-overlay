@@ -10,6 +10,10 @@ Item {
     required property real unit
     property var label
     property bool hasConfig: false
+    /// Held right now (feature 006).
+    property bool pressed: false
+    /// A tap-hold result to show: "", "tap" or "hold".
+    property string tapHold: ""
     readonly property real gap: 3
 
     // Unbound: no Kanata name, or a config is loaded and this key isn't in defsrc (FR-008).
@@ -31,9 +35,10 @@ Item {
         anchors.fill: parent
         anchors.margins: cap.gap
         radius: 6
-        color: "#2b2d31"
-        border.width: 1
-        border.color: cap.unbound ? "#a0522d" : "#4a4d55" // unbound keys stand out
+        color: cap.pressed ? "#3d4048" : "#2b2d31"
+        border.width: cap.pressed ? 2 : 1
+        border.color: cap.pressed ? "#6aa0ff"
+                    : cap.unbound ? "#a0522d" : "#4a4d55" // unbound keys stand out
 
         Column {
             anchors.centerIn: parent
@@ -78,6 +83,26 @@ Item {
             anchors.top: parent.top
             anchors.right: parent.right
             anchors.margins: 4
+        }
+    }
+
+    // Tap-hold result badge (feature 006).
+    Rectangle {
+        visible: cap.tapHold.length > 0
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: cap.gap + 2
+        width: badge.implicitWidth + 6
+        height: badge.implicitHeight + 2
+        radius: 3
+        color: cap.tapHold === "hold" ? "#b8860b" : "#2e7d32"
+        Text {
+            id: badge
+            anchors.centerIn: parent
+            font.pixelSize: 8
+            font.bold: true
+            color: "#ffffff"
+            text: cap.tapHold
         }
     }
 }
